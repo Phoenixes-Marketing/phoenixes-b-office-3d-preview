@@ -9,6 +9,17 @@ const canvas = document.querySelector("#scene");
 const statusEl = document.querySelector("#status");
 const planOpacity = document.querySelector("#planOpacity");
 const wallHeightInput = document.querySelector("#wallHeight");
+const toggleFurnitureButton = document.querySelector("#toggleFurniture");
+const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
+const toggleCadViewButton = document.querySelector("#toggleCadView");
+const columnEditor = document.querySelector("#columnEditor");
+const columnHint = document.querySelector("#columnHint");
+const columnInputs = {
+  x: document.querySelector("#columnX"),
+  z: document.querySelector("#columnZ"),
+  w: document.querySelector("#columnW"),
+  d: document.querySelector("#columnD"),
+};
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -34,14 +45,21 @@ controls.maxPolarAngle = Math.PI * 0.49;
 controls.touches.ONE = THREE.TOUCH.ROTATE;
 controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
 
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const dragPoint = new THREE.Vector3();
+
 const root = new THREE.Group();
 scene.add(root);
 
 const floorGroup = new THREE.Group();
 const wallGroup = new THREE.Group();
 const furnitureGroup = new THREE.Group();
+const fixtureGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
-root.add(floorGroup, wallGroup, furnitureGroup, labelGroup);
+const cadGroup = new THREE.Group();
+root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, cadGroup);
 
 const materials = {
   siteGround: new THREE.MeshStandardMaterial({ color: 0xe5e8e4, roughness: 0.86 }),
@@ -58,6 +76,8 @@ const materials = {
     opacity: 0.72,
   }),
   column: new THREE.MeshStandardMaterial({ color: 0xbb4b45, roughness: 0.58 }),
+  selectedColumn: new THREE.MeshStandardMaterial({ color: 0x2f8f7c, roughness: 0.56, emissive: 0x0c2d25, emissiveIntensity: 0.12 }),
+  columnPick: new THREE.MeshBasicMaterial({ color: 0x2f8f7c, transparent: true, opacity: 0, depthWrite: false }),
   wood: new THREE.MeshStandardMaterial({ color: 0xcaa58a, roughness: 0.64 }),
   paleWood: new THREE.MeshStandardMaterial({ color: 0xdfc6a7, roughness: 0.66 }),
   chair: new THREE.MeshStandardMaterial({ color: 0x79aa6f, roughness: 0.72 }),
@@ -84,6 +104,13 @@ const materials = {
   plant: new THREE.MeshStandardMaterial({ color: 0x3e7d4a, roughness: 0.86 }),
   skin: new THREE.MeshStandardMaterial({ color: 0xd7a482, roughness: 0.65 }),
   humanCloth: new THREE.MeshStandardMaterial({ color: 0x6f8790, roughness: 0.78 }),
+};
+
+const cadMaterials = {
+  heavy: new THREE.LineBasicMaterial({ color: 0x0e1111, transparent: true, opacity: 0.95, depthTest: false }),
+  medium: new THREE.LineBasicMaterial({ color: 0x1f2424, transparent: true, opacity: 0.78, depthTest: false }),
+  light: new THREE.LineBasicMaterial({ color: 0x5b6262, transparent: true, opacity: 0.5, depthTest: false }),
+  furniture: new THREE.LineBasicMaterial({ color: 0x252a2a, transparent: true, opacity: 0.62, depthTest: false }),
 };
 
 const DESIGN_ITEMS = [
@@ -160,6 +187,18 @@ let planMesh;
 let baseFloor;
 let officeElevation = 0.6;
 let currentWallHeight = Number(wallHeightInput.value);
+let furnitureVisible = true;
+let columnEditorOpen = false;
+let editableColumns = [];
+let selectedColumnId = null;
+let columnMeshes = [];
+let columnPickMeshes = [];
+let nextColumnId = 1;
+let draggingColumnId = null;
+let dragColumnOffset = { x: 0, z: 0 };
+let cadMode = false;
+const defaultBackground = new THREE.Color(0xe8ecef);
+const defaultFog = scene.fog;
 
 init();
 
@@ -176,6 +215,7 @@ async function init() {
     x: (bounds.x0 + bounds.x1) / 2,
     z: (bounds.z0 + bounds.z1) / 2,
   };
+  editableColumns = makeEditableColumns(data.columns);
   setupLights();
   buildScene();
   setCameraPreset("default");
@@ -193,10 +233,38 @@ function getBounds(model) {
   };
 }
 
+function makeEditableColumns(columns) {
+  nextColumnId = 1;
+  return columns.map((column) => ({
+    ...column,
+    __id: `column-${nextColumnId++}`,
+  }));
+}
+
 function bindControls() {
   document.querySelector("#resetView").addEventListener("click", () => setCameraPreset("default"));
   document.querySelector("#topView").addEventListener("click", () => setCameraPreset("top"));
-  document.querySelector("#walkView").addEventListener("click", () => setCameraPreset("walk"));
+  toggleCadViewButton?.addEventListener("click", () => {
+    cadMode = !cadMode;
+    applyCadMode();
+  });
+  toggleFurnitureButton?.addEventListener("click", () => {
+    furnitureVisible = !furnitureVisible;
+    furnitureGroup.visible = furnitureVisible && !cadMode;
+    toggleFurnitureButton.classList.toggle("is-active", furnitureVisible);
+    toggleFurnitureButton.setAttribute("aria-label", furnitureVisible ? "隱藏家具" : "顯示家具");
+    if (cadMode) rebuildCadPlan();
+    updateStatus();
+  });
+  toggleColumnEditorButton?.addEventListener("click", () => {
+    columnEditorOpen = !columnEditorOpen;
+    columnEditor.hidden = !columnEditorOpen;
+    toggleColumnEditorButton.classList.toggle("is-active", columnEditorOpen);
+    if (columnEditorOpen) ensureSelectedColumn();
+    else selectedColumnId = null;
+    syncColumnEditor();
+    rebuildWalls();
+  });
   document.querySelector("#togglePlan")?.addEventListener("click", (event) => {
     if (!planMesh) return;
     planMesh.visible = !planMesh.visible;
@@ -205,6 +273,7 @@ function bindControls() {
   document.querySelector("#toggleLabels").addEventListener("click", (event) => {
     labelGroup.visible = !labelGroup.visible;
     event.currentTarget.classList.toggle("is-active", labelGroup.visible);
+    if (cadMode) labelGroup.visible = false;
   });
   planOpacity?.addEventListener("input", () => {
     if (planMesh) planMesh.material.opacity = Number(planOpacity.value);
@@ -213,6 +282,16 @@ function bindControls() {
     currentWallHeight = Number(wallHeightInput.value);
     rebuildWalls();
   });
+  document.querySelector("#addColumn")?.addEventListener("click", addColumnAtViewTarget);
+  document.querySelector("#deleteColumn")?.addEventListener("click", deleteSelectedColumn);
+  document.querySelector("#resetColumns")?.addEventListener("click", resetEditableColumns);
+  Object.values(columnInputs).forEach((input) => {
+    input?.addEventListener("input", updateSelectedColumnFromFields);
+  });
+  canvas.addEventListener("pointerdown", startColumnDrag);
+  canvas.addEventListener("pointermove", dragSelectedColumn);
+  canvas.addEventListener("pointerup", endColumnDrag);
+  canvas.addEventListener("pointercancel", endColumnDrag);
   window.addEventListener("resize", resize);
 }
 
@@ -321,6 +400,8 @@ function addSubtleFloorPlanks(area) {
 
 function rebuildWalls() {
   clearGroup(wallGroup);
+  columnMeshes = [];
+  columnPickMeshes = [];
   const openings = getDoorOpenings();
   for (const item of data.walls) {
     for (const segment of splitWallByOpenings(item, openings)) {
@@ -330,8 +411,13 @@ function rebuildWalls() {
   for (const item of data.lowWalls) {
     addFootprint(item, data.defaults.lowWallHeightCm / 100, materials.lowWall, wallGroup);
   }
-  for (const item of data.columns) {
-    addFootprint(item, data.defaults.columnHeightCm / 100, materials.column, wallGroup);
+  for (const item of editableColumns) {
+    const material = columnEditorOpen && item.__id === selectedColumnId ? materials.selectedColumn : materials.column;
+    const mesh = addFootprint(item, data.defaults.columnHeightCm / 100, material, wallGroup);
+    mesh.userData.columnId = item.__id;
+    mesh.userData.isEditableColumn = true;
+    columnMeshes.push(mesh);
+    columnPickMeshes.push(addColumnDragHitbox(item));
   }
   for (const item of data.doorSills ?? []) {
     addFootprint(item, 0.035, materials.sill, wallGroup, { baseY: officeElevation + 0.01, cap: false });
@@ -340,7 +426,24 @@ function rebuildWalls() {
     addDoor(item, wallGroup);
   }
   addWindows(wallGroup);
+  rebuildCadPlan();
   updateStatus();
+}
+
+function addColumnDragHitbox(item) {
+  const metrics = getColumnMetrics(item);
+  const pickPaddingCm = 36;
+  const pickHeight = Math.max(data.defaults.columnHeightCm / 100, 2.6);
+  const width = Math.max((metrics.w + pickPaddingCm) / 100, 0.8);
+  const depth = Math.max((metrics.d + pickPaddingCm) / 100, 0.8);
+  const pos = toWorld(metrics.x, metrics.z);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, pickHeight, depth), materials.columnPick);
+  mesh.position.set(pos.x, officeElevation + pickHeight / 2, pos.z);
+  mesh.userData.columnId = item.__id;
+  mesh.userData.isEditableColumn = true;
+  mesh.renderOrder = -1;
+  wallGroup.add(mesh);
+  return mesh;
 }
 
 function getDoorOpenings() {
@@ -421,6 +524,147 @@ function addWindows(group) {
   for (const item of WINDOW_ITEMS) {
     addWindow(item, group);
   }
+}
+
+function rebuildCadPlan() {
+  clearGroup(cadGroup);
+  const y = officeElevation + 3.15;
+  for (const item of data.walls) addCadFootprint(item, cadMaterials.heavy, y);
+  for (const item of data.lowWalls) addCadFootprint(item, cadMaterials.medium, y);
+  for (const item of editableColumns) addCadFootprint(item, item.__id === selectedColumnId ? cadMaterials.medium : cadMaterials.heavy, y);
+  for (const item of data.doorSills ?? []) addCadFootprint(item, cadMaterials.light, y);
+  for (const item of data.doors ?? []) addCadDoor(item, y);
+  for (const item of WINDOW_ITEMS) addCadOrientedRect(item.x, item.z, item.w, Math.max(item.d, 8), item.rot ?? 0, cadMaterials.light, y);
+  if (furnitureVisible) {
+    for (const item of DESIGN_ITEMS) addCadFurniture(item, y);
+    for (const item of data.fixtures ?? []) addCadFixture(item, y);
+  }
+  cadGroup.visible = cadMode;
+}
+
+function addCadFootprint(item, material, y) {
+  if (item.shape === "segment") {
+    const a = toWorld(item.x0, item.z0);
+    const b = toWorld(item.x1, item.z1);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const length = Math.hypot(dx, dz) || 1;
+    const thickness = Math.max((item.thicknessCm || 14) / 100, 0.04);
+    const px = (-dz / length) * thickness * 0.5;
+    const pz = (dx / length) * thickness * 0.5;
+    addCadPolyline([
+      [a.x + px, a.z + pz],
+      [b.x + px, b.z + pz],
+      [b.x - px, b.z - pz],
+      [a.x - px, a.z - pz],
+      [a.x + px, a.z + pz],
+    ], material, y);
+    return;
+  }
+  const x0 = Math.min(item.x0, item.x1);
+  const x1 = Math.max(item.x0, item.x1);
+  const z0 = Math.min(item.z0, item.z1);
+  const z1 = Math.max(item.z0, item.z1);
+  const a = toWorld(x0, z0);
+  const b = toWorld(x1, z1);
+  addCadPolyline([
+    [a.x, a.z],
+    [b.x, a.z],
+    [b.x, b.z],
+    [a.x, b.z],
+    [a.x, a.z],
+  ], material, y);
+}
+
+function addCadDoor(item, y) {
+  const hinge = toWorld(item.hinge.x, item.hinge.z);
+  const endA = toWorld(item.endA.x, item.endA.z);
+  const endB = toWorld(item.endB.x, item.endB.z);
+  addCadPolyline([[hinge.x, hinge.z], [endA.x, endA.z]], cadMaterials.medium, y);
+  const start = Math.atan2(endA.z - hinge.z, endA.x - hinge.x);
+  const end = Math.atan2(endB.z - hinge.z, endB.x - hinge.x);
+  let delta = end - start;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  const radius = Math.max((item.radiusCm ?? 90) / 100, 0.45);
+  const points = [];
+  for (let i = 0; i <= 24; i += 1) {
+    const angle = start + delta * (i / 24);
+    points.push([hinge.x + Math.cos(angle) * radius, hinge.z + Math.sin(angle) * radius]);
+  }
+  addCadPolyline(points, cadMaterials.light, y);
+}
+
+function addCadFurniture(item, y) {
+  const rot = item.rot ?? item.rotation ?? 0;
+  if (item.type === "roundTable") {
+    addCadCircle(item.x, item.z, item.r ?? 60, cadMaterials.furniture, y);
+    return;
+  }
+  if (item.type === "plant") {
+    addCadCircle(item.x, item.z, 24, cadMaterials.light, y);
+    return;
+  }
+  const defaults = {
+    chair: [42, 42],
+    lounge: [58, 58],
+    workbench: [item.w ?? 180, item.d ?? 60],
+    desk: [item.w ?? 130, item.d ?? 70],
+    conferenceTable: [item.w ?? 460, item.d ?? 160],
+    reception: [item.w ?? 300, item.d ?? 80],
+    sofa: [item.w ?? 180, item.d ?? 80],
+    coffee: [item.w ?? 80, item.d ?? 50],
+    cabinet: [item.w ?? 120, item.d ?? 42],
+    shelf: [item.w ?? 150, item.d ?? 36],
+    counter: [item.w ?? 140, item.d ?? 44],
+    display: [item.w ?? 120, item.d ?? 36],
+    rug: [item.w ?? 160, item.d ?? 100],
+  };
+  const [width, depth] = defaults[item.type] ?? [item.w ?? 80, item.d ?? 60];
+  addCadOrientedRect(item.x, item.z, width, depth, rot, cadMaterials.furniture, y);
+}
+
+function addCadFixture(item, y) {
+  addCadOrientedRect(item.x, item.z, 42, 36, item.rotation ?? 0, cadMaterials.light, y);
+}
+
+function addCadOrientedRect(xCm, zCm, widthCm, depthCm, rotDeg, material, y) {
+  const centerPoint = toWorld(xCm, zCm);
+  const width = widthCm / 100;
+  const depth = depthCm / 100;
+  const rot = (rotDeg * Math.PI) / 180;
+  const corners = [
+    [-width / 2, -depth / 2],
+    [width / 2, -depth / 2],
+    [width / 2, depth / 2],
+    [-width / 2, depth / 2],
+    [-width / 2, -depth / 2],
+  ].map(([x, z]) => [
+    centerPoint.x + x * Math.cos(rot) - z * Math.sin(rot),
+    centerPoint.z + x * Math.sin(rot) + z * Math.cos(rot),
+  ]);
+  addCadPolyline(corners, material, y);
+}
+
+function addCadCircle(xCm, zCm, radiusCm, material, y) {
+  const centerPoint = toWorld(xCm, zCm);
+  const radius = radiusCm / 100;
+  const points = [];
+  for (let i = 0; i <= 32; i += 1) {
+    const angle = (i / 32) * Math.PI * 2;
+    points.push([centerPoint.x + Math.cos(angle) * radius, centerPoint.z + Math.sin(angle) * radius]);
+  }
+  addCadPolyline(points, material, y);
+}
+
+function addCadPolyline(points, material, y) {
+  const vertices = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    vertices.push(new THREE.Vector3(points[i][0], y, points[i][1]), new THREE.Vector3(points[i + 1][0], y, points[i + 1][1]));
+  }
+  const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(vertices), material);
+  line.renderOrder = 20;
+  cadGroup.add(line);
 }
 
 function addWindow(item, group) {
@@ -736,7 +980,7 @@ function addFixtureGroup(item) {
   const group = new THREE.Group();
   group.position.set(p.x, officeElevation, p.z);
   group.rotation.y = ((item.rotation ?? 0) * Math.PI) / 180;
-  furnitureGroup.add(group);
+  fixtureGroup.add(group);
   return group;
 }
 
@@ -776,6 +1020,34 @@ function addUrinal(item) {
   bowl.position.set(0, 0.34, 0.0);
   bowl.scale.set(1, 0.7, 1);
   group.add(bowl);
+}
+
+function applyCadMode() {
+  if (cadMode) {
+    rebuildCadPlan();
+    floorGroup.visible = false;
+    wallGroup.visible = false;
+    furnitureGroup.visible = false;
+    fixtureGroup.visible = false;
+    labelGroup.visible = false;
+    cadGroup.visible = true;
+    scene.background = new THREE.Color(0xffffff);
+    scene.fog = null;
+    toggleCadViewButton?.classList.add("is-active");
+    setCameraPreset("cad");
+  } else {
+    floorGroup.visible = true;
+    wallGroup.visible = true;
+    furnitureGroup.visible = furnitureVisible;
+    fixtureGroup.visible = true;
+    labelGroup.visible = document.querySelector("#toggleLabels")?.classList.contains("is-active") ?? true;
+    cadGroup.visible = false;
+    scene.background = defaultBackground.clone();
+    scene.fog = defaultFog;
+    toggleCadViewButton?.classList.remove("is-active");
+    setCameraPreset("default");
+  }
+  updateStatus();
 }
 
 function addDecor() {
@@ -1051,10 +1323,200 @@ function addChair(item, workSurfaces = []) {
   furnitureGroup.add(group);
 }
 
+function ensureSelectedColumn() {
+  if (!editableColumns.length) {
+    selectedColumnId = null;
+    return null;
+  }
+  if (!editableColumns.some((column) => column.__id === selectedColumnId)) {
+    selectedColumnId = editableColumns[0].__id;
+  }
+  return getSelectedColumn();
+}
+
+function getSelectedColumn() {
+  return editableColumns.find((column) => column.__id === selectedColumnId) ?? null;
+}
+
+function getColumnMetrics(column) {
+  const x0 = Math.min(column.x0, column.x1);
+  const x1 = Math.max(column.x0, column.x1);
+  const z0 = Math.min(column.z0, column.z1);
+  const z1 = Math.max(column.z0, column.z1);
+  return {
+    x: (x0 + x1) / 2,
+    z: (z0 + z1) / 2,
+    w: x1 - x0,
+    d: z1 - z0,
+  };
+}
+
+function setColumnMetrics(column, metrics) {
+  const current = getColumnMetrics(column);
+  const width = Math.max(Number(metrics.w) || current.w, 10);
+  const depth = Math.max(Number(metrics.d) || current.d, 10);
+  const x = Number.isFinite(Number(metrics.x)) ? Number(metrics.x) : current.x;
+  const z = Number.isFinite(Number(metrics.z)) ? Number(metrics.z) : current.z;
+  column.x0 = x - width / 2;
+  column.x1 = x + width / 2;
+  column.z0 = z - depth / 2;
+  column.z1 = z + depth / 2;
+  column.shape = "rect";
+  column.kind = "column";
+}
+
+function syncColumnEditor() {
+  const selected = ensureSelectedColumn();
+  const disabled = !columnEditorOpen || !selected;
+  Object.values(columnInputs).forEach((input) => {
+    if (input) input.disabled = disabled;
+  });
+  document.querySelector("#deleteColumn")?.toggleAttribute("disabled", disabled);
+
+  if (!columnHint) return;
+  if (!columnEditorOpen) {
+    columnHint.textContent = "重整後恢復原樣";
+    return;
+  }
+  if (!selected) {
+    columnHint.textContent = "目前 0 根柱；可按新增";
+    return;
+  }
+
+  const index = editableColumns.findIndex((column) => column.__id === selected.__id) + 1;
+  const metrics = getColumnMetrics(selected);
+  columnInputs.x.value = Math.round(metrics.x);
+  columnInputs.z.value = Math.round(metrics.z);
+  columnInputs.w.value = Math.round(metrics.w);
+  columnInputs.d.value = Math.round(metrics.d);
+  columnHint.textContent = `第 ${index}/${editableColumns.length} 根；點住柱子可拖曳`;
+}
+
+function addColumnAtViewTarget() {
+  const target = toPlan(controls.target.x, controls.target.z);
+  const selected = getSelectedColumn();
+  const size = selected ? getColumnMetrics(selected) : { w: 50, d: 50 };
+  const column = {
+    kind: "column",
+    shape: "rect",
+    x0: target.x - size.w / 2,
+    x1: target.x + size.w / 2,
+    z0: target.z - size.d / 2,
+    z1: target.z + size.d / 2,
+    source: "temporary-browser-column",
+    __id: `column-${nextColumnId++}`,
+  };
+  editableColumns.push(column);
+  selectedColumnId = column.__id;
+  syncColumnEditor();
+  rebuildWalls();
+}
+
+function deleteSelectedColumn() {
+  if (!selectedColumnId) return;
+  const index = editableColumns.findIndex((column) => column.__id === selectedColumnId);
+  if (index < 0) return;
+  editableColumns.splice(index, 1);
+  selectedColumnId = editableColumns[Math.min(index, editableColumns.length - 1)]?.__id ?? null;
+  syncColumnEditor();
+  rebuildWalls();
+}
+
+function resetEditableColumns() {
+  editableColumns = makeEditableColumns(data.columns);
+  selectedColumnId = editableColumns[0]?.__id ?? null;
+  syncColumnEditor();
+  rebuildWalls();
+}
+
+function updateSelectedColumnFromFields() {
+  const selected = getSelectedColumn();
+  if (!selected) return;
+  setColumnMetrics(selected, {
+    x: Number(columnInputs.x.value),
+    z: Number(columnInputs.z.value),
+    w: Number(columnInputs.w.value),
+    d: Number(columnInputs.d.value),
+  });
+  rebuildWalls();
+}
+
+function setPointerFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+  raycaster.setFromCamera(pointer, camera);
+}
+
+function getColumnHitFromEvent(event) {
+  if (!columnEditorOpen || !columnPickMeshes.length) return;
+  setPointerFromEvent(event);
+  return raycaster.intersectObjects(columnPickMeshes, false)[0] ?? raycaster.intersectObjects(columnMeshes, false)[0];
+}
+
+function getPlanPointFromEvent(event) {
+  setPointerFromEvent(event);
+  dragPlane.constant = -officeElevation;
+  if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return null;
+  return toPlan(dragPoint.x, dragPoint.z);
+}
+
+function startColumnDrag(event) {
+  const hit = getColumnHitFromEvent(event);
+  if (!hit?.object?.userData?.columnId) return;
+  selectedColumnId = hit.object.userData.columnId;
+  const selected = getSelectedColumn();
+  const planPoint = getPlanPointFromEvent(event);
+  if (!selected || !planPoint) return;
+  const metrics = getColumnMetrics(selected);
+  dragColumnOffset = {
+    x: metrics.x - planPoint.x,
+    z: metrics.z - planPoint.z,
+  };
+  draggingColumnId = selectedColumnId;
+  controls.enabled = false;
+  canvas.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+  syncColumnEditor();
+  rebuildWalls();
+}
+
+function dragSelectedColumn(event) {
+  if (!draggingColumnId) return;
+  const selected = getSelectedColumn();
+  const planPoint = getPlanPointFromEvent(event);
+  if (!selected || !planPoint) return;
+  const metrics = getColumnMetrics(selected);
+  setColumnMetrics(selected, {
+    x: planPoint.x + dragColumnOffset.x,
+    z: planPoint.z + dragColumnOffset.z,
+    w: metrics.w,
+    d: metrics.d,
+  });
+  syncColumnEditor();
+  rebuildWalls();
+  event.preventDefault();
+}
+
+function endColumnDrag(event) {
+  if (!draggingColumnId) return;
+  draggingColumnId = null;
+  controls.enabled = true;
+  canvas.releasePointerCapture?.(event.pointerId);
+  updateStatus();
+}
+
 function toWorld(xCm, zCm) {
   return {
     x: (xCm - center.x) / 100,
     z: (zCm - center.z) / 100,
+  };
+}
+
+function toPlan(worldX, worldZ) {
+  return {
+    x: worldX * 100 + center.x,
+    z: worldZ * 100 + center.z,
   };
 }
 
@@ -1095,6 +1557,9 @@ function setCameraPreset(preset) {
   if (preset === "top") {
     camera.position.set(0, 30, 0.01);
     controls.target.set(0, officeElevation, 0);
+  } else if (preset === "cad") {
+    camera.position.set(0, 38, 0.001);
+    controls.target.set(0, officeElevation, 0);
   } else if (preset === "walk") {
     camera.position.set(-5.4, 2.8, 4.5);
     controls.target.set(2.4, officeElevation + 0.9, -0.5);
@@ -1107,7 +1572,12 @@ function setCameraPreset(preset) {
 
 function updateStatus() {
   if (!data) return;
-  statusEl.textContent = `裝潢佈置版：牆 ${data.walls.length} 段 / 門 ${data.doors?.length ?? 0} 組 / 柱 ${data.columns.length} 根 / 矮牆 ${data.lowWalls.length} 段 / 窗 ${WINDOW_ITEMS.length} 組 / 家具 ${DESIGN_ITEMS.length} 件；手機支援單指旋轉、雙指縮放平移。牆高 ${currentWallHeight.toFixed(2)}m，室內地坪 +${Math.round(officeElevation * 100)}cm。`;
+  const columnDelta = editableColumns.length - (data.columns?.length ?? 0);
+  const columnText = columnDelta === 0 ? `${editableColumns.length} 根` : `${editableColumns.length} 根（臨時 ${columnDelta > 0 ? "+" : ""}${columnDelta}）`;
+  const furnitureText = furnitureVisible ? "家具顯示中" : "家具已隱藏";
+  const editText = columnEditorOpen ? "柱子臨時編輯中，重整會復原" : "柱子為原始/當次預覽狀態";
+  const viewText = cadMode ? "黑白線條俯視圖" : "3D 預覽";
+  statusEl.textContent = `裝潢佈置版：${viewText}；牆 ${data.walls.length} 段 / 門 ${data.doors?.length ?? 0} 組 / 柱 ${columnText} / 矮牆 ${data.lowWalls.length} 段 / 窗 ${WINDOW_ITEMS.length} 組 / 家具 ${DESIGN_ITEMS.length} 件；${furnitureText}；${editText}；手機支援單指旋轉、雙指縮放平移。牆高 ${currentWallHeight.toFixed(2)}m，室內地坪 +${Math.round(officeElevation * 100)}cm。`;
 }
 
 function clearGroup(group) {

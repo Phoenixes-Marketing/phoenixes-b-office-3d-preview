@@ -126,6 +126,82 @@ input[type="range"] {
   accent-color: #2c7f72;
 }
 
+.column-editor {
+  top: 82px;
+  right: 14px;
+  width: min(360px, calc(100vw - 28px));
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.column-editor[hidden] {
+  display: none;
+}
+
+.column-editor__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.column-editor__header strong {
+  font-size: 14px;
+}
+
+.column-editor__header span {
+  color: #63707a;
+  font-size: 12px;
+}
+
+.column-editor__actions,
+.column-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.column-editor__actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.column-editor button,
+.column-fields input {
+  min-height: 34px;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 8px;
+  color: #26343d;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.column-editor button {
+  cursor: pointer;
+}
+
+.column-editor button:hover {
+  background: #e2f0ec;
+  border-color: #5da392;
+  color: #1d6558;
+}
+
+.column-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.column-fields label {
+  display: grid;
+  gap: 4px;
+  color: #51606a;
+  font-size: 12px;
+}
+
+.column-fields input {
+  width: 100%;
+  padding: 0 8px;
+}
+
 .status {
   right: 14px;
   bottom: 14px;
@@ -149,5 +225,25 @@ input[type="range"] {
 
   .panel {
     bottom: 112px;
+  }
+
+  .column-editor {
+    top: 124px;
+    left: 14px;
+    right: 14px;
+    width: auto;
+  }
+
+  .column-editor__actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .column-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .status {
+    left: 14px;
+    right: 14px;
   }
 }
