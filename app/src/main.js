@@ -6,13 +6,17 @@ import { createIcons, icons } from "lucide";
 createIcons({ icons });
 
 const canvas = document.querySelector("#scene");
-const statusEl = document.querySelector("#status");
 const planOpacity = document.querySelector("#planOpacity");
 const wallHeightInput = document.querySelector("#wallHeight");
+const wallHeightPanel = document.querySelector("#wallHeightPanel");
+const wallHeightValue = document.querySelector("#wallHeightValue");
+const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
 const columnEditor = document.querySelector("#columnEditor");
+const columnEditorBody = document.querySelector("#columnEditorBody");
+const collapseColumnEditorButton = document.querySelector("#collapseColumnEditor");
 const columnHint = document.querySelector("#columnHint");
 const columnInputs = {
   x: document.querySelector("#columnX"),
@@ -187,8 +191,10 @@ let planMesh;
 let baseFloor;
 let officeElevation = 0.6;
 let currentWallHeight = Number(wallHeightInput.value);
+let wallHeightPanelOpen = false;
 let furnitureVisible = true;
 let columnEditorOpen = false;
+let columnEditorCollapsed = false;
 let editableColumns = [];
 let selectedColumnId = null;
 let columnMeshes = [];
@@ -210,6 +216,7 @@ async function init() {
   wallHeightInput.step = "0.05";
   wallHeightInput.value = ((data.defaults?.wallHeightCm ?? 200) / 100).toFixed(2);
   currentWallHeight = Number(wallHeightInput.value);
+  updateWallHeightLabel();
   bounds = getBounds(data);
   center = {
     x: (bounds.x0 + bounds.x1) / 2,
@@ -241,9 +248,34 @@ function makeEditableColumns(columns) {
   }));
 }
 
+function setWallHeightPanelOpen(open) {
+  wallHeightPanelOpen = open;
+  if (open && columnEditorOpen) setColumnEditorCollapsed(true);
+  if (wallHeightPanel) wallHeightPanel.hidden = !open;
+  toggleWallHeightButton?.classList.toggle("is-active", open);
+  toggleWallHeightButton?.setAttribute("aria-expanded", String(open));
+}
+
+function updateWallHeightLabel() {
+  const label = `${currentWallHeight.toFixed(2)}m`;
+  if (wallHeightValue) wallHeightValue.textContent = label;
+  toggleWallHeightButton?.setAttribute("title", `牆高 ${label}`);
+  toggleWallHeightButton?.setAttribute("aria-label", `牆高 ${label}`);
+}
+
+function setColumnEditorCollapsed(collapsed) {
+  columnEditorCollapsed = collapsed;
+  columnEditor?.classList.toggle("is-collapsed", collapsed);
+  if (columnEditorBody) columnEditorBody.hidden = collapsed;
+  collapseColumnEditorButton?.setAttribute("aria-expanded", String(!collapsed));
+  collapseColumnEditorButton?.setAttribute("aria-label", collapsed ? "展開柱子編輯" : "收合柱子編輯");
+  collapseColumnEditorButton?.setAttribute("title", collapsed ? "展開柱子編輯" : "收合柱子編輯");
+}
+
 function bindControls() {
   document.querySelector("#resetView").addEventListener("click", () => setCameraPreset("default"));
   document.querySelector("#topView").addEventListener("click", () => setCameraPreset("top"));
+  toggleWallHeightButton?.addEventListener("click", () => setWallHeightPanelOpen(!wallHeightPanelOpen));
   toggleCadViewButton?.addEventListener("click", () => {
     cadMode = !cadMode;
     applyCadMode();
@@ -260,11 +292,17 @@ function bindControls() {
     columnEditorOpen = !columnEditorOpen;
     columnEditor.hidden = !columnEditorOpen;
     toggleColumnEditorButton.classList.toggle("is-active", columnEditorOpen);
-    if (columnEditorOpen) ensureSelectedColumn();
-    else selectedColumnId = null;
+    if (columnEditorOpen) {
+      ensureSelectedColumn();
+      setColumnEditorCollapsed(false);
+      setWallHeightPanelOpen(false);
+    } else {
+      selectedColumnId = null;
+    }
     syncColumnEditor();
     rebuildWalls();
   });
+  collapseColumnEditorButton?.addEventListener("click", () => setColumnEditorCollapsed(!columnEditorCollapsed));
   document.querySelector("#togglePlan")?.addEventListener("click", (event) => {
     if (!planMesh) return;
     planMesh.visible = !planMesh.visible;
@@ -280,6 +318,7 @@ function bindControls() {
   });
   wallHeightInput.addEventListener("input", () => {
     currentWallHeight = Number(wallHeightInput.value);
+    updateWallHeightLabel();
     rebuildWalls();
   });
   document.querySelector("#addColumn")?.addEventListener("click", addColumnAtViewTarget);
@@ -1572,12 +1611,7 @@ function setCameraPreset(preset) {
 
 function updateStatus() {
   if (!data) return;
-  const columnDelta = editableColumns.length - (data.columns?.length ?? 0);
-  const columnText = columnDelta === 0 ? `${editableColumns.length} 根` : `${editableColumns.length} 根（臨時 ${columnDelta > 0 ? "+" : ""}${columnDelta}）`;
-  const furnitureText = furnitureVisible ? "家具顯示中" : "家具已隱藏";
-  const editText = columnEditorOpen ? "柱子臨時編輯中，重整會復原" : "柱子為原始/當次預覽狀態";
-  const viewText = cadMode ? "黑白線條俯視圖" : "3D 預覽";
-  statusEl.textContent = `裝潢佈置版：${viewText}；牆 ${data.walls.length} 段 / 門 ${data.doors?.length ?? 0} 組 / 柱 ${columnText} / 矮牆 ${data.lowWalls.length} 段 / 窗 ${WINDOW_ITEMS.length} 組 / 家具 ${DESIGN_ITEMS.length} 件；${furnitureText}；${editText}；手機支援單指旋轉、雙指縮放平移。牆高 ${currentWallHeight.toFixed(2)}m，室內地坪 +${Math.round(officeElevation * 100)}cm。`;
+  updateWallHeightLabel();
 }
 
 function clearGroup(group) {
