@@ -14,6 +14,12 @@ const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
+const togglePlanStorageButton = document.querySelector("#togglePlanStorage");
+const planStoragePanel = document.querySelector("#planStoragePanel");
+const closePlanStorageButton = document.querySelector("#closePlanStorage");
+const planStorageStatus = document.querySelector("#planStorageStatus");
+const loadDraftButton = document.querySelector("#loadDraft");
+const importPlanFile = document.querySelector("#importPlanFile");
 const columnEditor = document.querySelector("#columnEditor");
 const columnEditorBody = document.querySelector("#columnEditorBody");
 const collapseColumnEditorButton = document.querySelector("#collapseColumnEditor");
@@ -53,6 +59,9 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const dragPoint = new THREE.Vector3();
+const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
+const PLAN_FORMAT = "phoenixes-office-column-plan";
+const PLAN_SCHEMA_VERSION = 1;
 
 const root = new THREE.Group();
 scene.add(root);
@@ -192,6 +201,7 @@ let baseFloor;
 let officeElevation = 0.6;
 let currentWallHeight = Number(wallHeightInput.value);
 let wallHeightPanelOpen = false;
+let planStoragePanelOpen = false;
 let furnitureVisible = true;
 let columnEditorOpen = false;
 let columnEditorCollapsed = false;
@@ -223,6 +233,7 @@ async function init() {
     z: (bounds.z0 + bounds.z1) / 2,
   };
   editableColumns = makeEditableColumns(data.columns);
+  refreshPlanStorageStatus();
   setupLights();
   buildScene();
   setCameraPreset("default");
@@ -250,10 +261,23 @@ function makeEditableColumns(columns) {
 
 function setWallHeightPanelOpen(open) {
   wallHeightPanelOpen = open;
+  if (open && planStoragePanelOpen) setPlanStoragePanelOpen(false);
   if (open && columnEditorOpen) setColumnEditorCollapsed(true);
   if (wallHeightPanel) wallHeightPanel.hidden = !open;
   toggleWallHeightButton?.classList.toggle("is-active", open);
   toggleWallHeightButton?.setAttribute("aria-expanded", String(open));
+}
+
+function setPlanStoragePanelOpen(open) {
+  planStoragePanelOpen = open;
+  if (open) {
+    setWallHeightPanelOpen(false);
+    if (columnEditorOpen) setColumnEditorOpen(false);
+    refreshPlanStorageStatus();
+  }
+  if (planStoragePanel) planStoragePanel.hidden = !open;
+  togglePlanStorageButton?.classList.toggle("is-active", open);
+  togglePlanStorageButton?.setAttribute("aria-expanded", String(open));
 }
 
 function updateWallHeightLabel() {
@@ -272,10 +296,28 @@ function setColumnEditorCollapsed(collapsed) {
   collapseColumnEditorButton?.setAttribute("title", collapsed ? "展開柱子編輯" : "收合柱子編輯");
 }
 
+function setColumnEditorOpen(open) {
+  columnEditorOpen = open;
+  columnEditor.hidden = !open;
+  toggleColumnEditorButton?.classList.toggle("is-active", open);
+  if (open) {
+    ensureSelectedColumn();
+    setColumnEditorCollapsed(false);
+    setWallHeightPanelOpen(false);
+    setPlanStoragePanelOpen(false);
+  } else {
+    selectedColumnId = null;
+  }
+  syncColumnEditor();
+  rebuildWalls();
+}
+
 function bindControls() {
   document.querySelector("#resetView").addEventListener("click", () => setCameraPreset("default"));
   document.querySelector("#topView").addEventListener("click", () => setCameraPreset("top"));
   toggleWallHeightButton?.addEventListener("click", () => setWallHeightPanelOpen(!wallHeightPanelOpen));
+  togglePlanStorageButton?.addEventListener("click", () => setPlanStoragePanelOpen(!planStoragePanelOpen));
+  closePlanStorageButton?.addEventListener("click", () => setPlanStoragePanelOpen(false));
   toggleCadViewButton?.addEventListener("click", () => {
     cadMode = !cadMode;
     applyCadMode();
@@ -288,20 +330,7 @@ function bindControls() {
     if (cadMode) rebuildCadPlan();
     updateStatus();
   });
-  toggleColumnEditorButton?.addEventListener("click", () => {
-    columnEditorOpen = !columnEditorOpen;
-    columnEditor.hidden = !columnEditorOpen;
-    toggleColumnEditorButton.classList.toggle("is-active", columnEditorOpen);
-    if (columnEditorOpen) {
-      ensureSelectedColumn();
-      setColumnEditorCollapsed(false);
-      setWallHeightPanelOpen(false);
-    } else {
-      selectedColumnId = null;
-    }
-    syncColumnEditor();
-    rebuildWalls();
-  });
+  toggleColumnEditorButton?.addEventListener("click", () => setColumnEditorOpen(!columnEditorOpen));
   collapseColumnEditorButton?.addEventListener("click", () => setColumnEditorCollapsed(!columnEditorCollapsed));
   document.querySelector("#togglePlan")?.addEventListener("click", (event) => {
     if (!planMesh) return;
@@ -324,6 +353,12 @@ function bindControls() {
   document.querySelector("#addColumn")?.addEventListener("click", addColumnAtViewTarget);
   document.querySelector("#deleteColumn")?.addEventListener("click", deleteSelectedColumn);
   document.querySelector("#resetColumns")?.addEventListener("click", resetEditableColumns);
+  document.querySelector("#saveDraft")?.addEventListener("click", saveDraft);
+  loadDraftButton?.addEventListener("click", loadDraft);
+  document.querySelector("#exportPlan")?.addEventListener("click", exportPlan);
+  document.querySelector("#importPlan")?.addEventListener("click", () => importPlanFile?.click());
+  document.querySelector("#restoreOriginal")?.addEventListener("click", restoreOriginalPlan);
+  importPlanFile?.addEventListener("change", importPlanFromFile);
   Object.values(columnInputs).forEach((input) => {
     input?.addEventListener("input", updateSelectedColumnFromFields);
   });
@@ -1466,6 +1501,183 @@ function resetEditableColumns() {
   selectedColumnId = editableColumns[0]?.__id ?? null;
   syncColumnEditor();
   rebuildWalls();
+}
+
+function getCurrentPlanState() {
+  return {
+    format: PLAN_FORMAT,
+    schemaVersion: PLAN_SCHEMA_VERSION,
+    savedAt: new Date().toISOString(),
+    wallHeightM: Number(currentWallHeight.toFixed(2)),
+    columns: editableColumns.map((column) => ({
+      kind: "column",
+      shape: "rect",
+      x0: Number(column.x0),
+      z0: Number(column.z0),
+      x1: Number(column.x1),
+      z1: Number(column.z1),
+      source: typeof column.source === "string" ? column.source : "saved-browser-column",
+    })),
+  };
+}
+
+function normalizePlanState(plan) {
+  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || plan.schemaVersion !== PLAN_SCHEMA_VERSION) {
+    throw new Error("不是相容的封王 288 號調整方案");
+  }
+  if (!Array.isArray(plan.columns) || plan.columns.length > 100) {
+    throw new Error("柱子資料數量不正確");
+  }
+
+  const wallHeightM = Number(plan.wallHeightM);
+  const minWallHeight = Number(wallHeightInput.min);
+  const maxWallHeight = Number(wallHeightInput.max);
+  if (!Number.isFinite(wallHeightM) || wallHeightM < minWallHeight || wallHeightM > maxWallHeight) {
+    throw new Error(`牆高必須介於 ${minWallHeight.toFixed(2)}m 到 ${maxWallHeight.toFixed(2)}m`);
+  }
+
+  const columns = plan.columns.map((column, index) => {
+    const values = [column?.x0, column?.z0, column?.x1, column?.z1].map(Number);
+    if (values.some((value) => !Number.isFinite(value) || Math.abs(value) > 100000)) {
+      throw new Error(`第 ${index + 1} 根柱子的座標不正確`);
+    }
+    const [x0, z0, x1, z1] = values;
+    if (Math.abs(x1 - x0) < 10 || Math.abs(z1 - z0) < 10) {
+      throw new Error(`第 ${index + 1} 根柱子的寬或深不得小於 10cm`);
+    }
+    return {
+      kind: "column",
+      shape: "rect",
+      x0,
+      z0,
+      x1,
+      z1,
+      source: typeof column.source === "string" ? column.source.slice(0, 120) : "imported-browser-column",
+    };
+  });
+
+  const savedAt = new Date(plan.savedAt);
+  return {
+    format: PLAN_FORMAT,
+    schemaVersion: PLAN_SCHEMA_VERSION,
+    savedAt: Number.isNaN(savedAt.getTime()) ? new Date().toISOString() : savedAt.toISOString(),
+    wallHeightM: Number(wallHeightM.toFixed(2)),
+    columns,
+  };
+}
+
+function applyPlanState(plan) {
+  const normalized = normalizePlanState(plan);
+  currentWallHeight = normalized.wallHeightM;
+  wallHeightInput.value = currentWallHeight.toFixed(2);
+  editableColumns = makeEditableColumns(normalized.columns);
+  selectedColumnId = editableColumns[0]?.__id ?? null;
+  updateWallHeightLabel();
+  syncColumnEditor();
+  rebuildWalls();
+  return normalized;
+}
+
+function readStoredDraft() {
+  const raw = window.localStorage.getItem(PLAN_STORAGE_KEY);
+  if (!raw) return null;
+  return normalizePlanState(JSON.parse(raw));
+}
+
+function formatDraftTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "時間未知";
+  return new Intl.DateTimeFormat("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function refreshPlanStorageStatus(message = "") {
+  try {
+    const draft = readStoredDraft();
+    if (loadDraftButton) loadDraftButton.disabled = !draft;
+    if (planStorageStatus) {
+      planStorageStatus.textContent = message || (draft ? `本機草稿 ${formatDraftTime(draft.savedAt)}` : "尚未儲存本機草稿");
+    }
+  } catch (error) {
+    if (loadDraftButton) loadDraftButton.disabled = true;
+    if (planStorageStatus) planStorageStatus.textContent = message || `草稿無法讀取：${error.message}`;
+  }
+}
+
+function saveDraft() {
+  try {
+    const plan = getCurrentPlanState();
+    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
+    refreshPlanStorageStatus(`草稿已儲存 ${formatDraftTime(plan.savedAt)}`);
+  } catch (error) {
+    refreshPlanStorageStatus(`儲存失敗：${error.message}`);
+  }
+}
+
+function loadDraft() {
+  try {
+    const draft = readStoredDraft();
+    if (!draft) {
+      refreshPlanStorageStatus("目前沒有本機草稿");
+      return;
+    }
+    const loaded = applyPlanState(draft);
+    refreshPlanStorageStatus(`已載入草稿 ${formatDraftTime(loaded.savedAt)}`);
+  } catch (error) {
+    refreshPlanStorageStatus(`載入失敗：${error.message}`);
+  }
+}
+
+function getPlanFilename(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+  return `phoenixes-288-column-plan-${stamp}.json`;
+}
+
+function exportPlan() {
+  const plan = getCurrentPlanState();
+  const blob = new Blob([`${JSON.stringify(plan, null, 2)}\n`], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = getPlanFilename();
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  refreshPlanStorageStatus("方案已匯出");
+}
+
+async function importPlanFromFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 512 * 1024) throw new Error("檔案超過 512KB");
+    const imported = applyPlanState(JSON.parse(await file.text()));
+    refreshPlanStorageStatus(`已匯入 ${file.name}，共 ${imported.columns.length} 根柱`);
+  } catch (error) {
+    refreshPlanStorageStatus(`匯入失敗：${error.message}`);
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function restoreOriginalPlan() {
+  const confirmed = window.confirm("恢復原始柱子位置與牆高？已儲存的本機草稿不會被刪除。");
+  if (!confirmed) return;
+  currentWallHeight = (data.defaults?.wallHeightCm ?? 200) / 100;
+  wallHeightInput.value = currentWallHeight.toFixed(2);
+  editableColumns = makeEditableColumns(data.columns);
+  selectedColumnId = editableColumns[0]?.__id ?? null;
+  updateWallHeightLabel();
+  syncColumnEditor();
+  rebuildWalls();
+  refreshPlanStorageStatus("已恢復原始，草稿仍保留");
 }
 
 function updateSelectedColumnFromFields() {
