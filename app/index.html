@@ -17,6 +17,7 @@
           <button id="resetView" class="icon-button" type="button" title="重置視角" aria-label="重置視角" data-lucide="rotate-ccw"></button>
           <button id="topView" class="icon-button" type="button" title="俯視" aria-label="俯視" data-lucide="scan"></button>
           <button id="toggleWallHeight" class="icon-button" type="button" title="牆面高度" aria-label="牆面高度" aria-expanded="false" aria-controls="wallHeightPanel" data-lucide="move-vertical"></button>
+          <button id="toggleRoof" class="icon-button" type="button" title="顯示／隱藏雙坡屋頂" aria-label="顯示／隱藏雙坡屋頂" data-lucide="house"></button>
           <button id="toggleCadView" class="icon-button" type="button" title="黑白線條俯視圖" aria-label="黑白線條俯視圖" data-lucide="drafting-compass"></button>
           <button id="toggleDoorOpen" class="icon-button is-active" type="button" title="將門片關閉展示" aria-label="將門片關閉展示" data-lucide="door-open"></button>
           <button id="toggleFurniture" class="icon-button is-active" type="button" title="顯示/隱藏家具" aria-label="顯示/隱藏家具" data-lucide="eye-off"></button>
@@ -105,7 +106,7 @@
               <span id="columnWLabel">寬 cm</span>
               <input id="columnW" type="number" min="1" step="1" />
             </label>
-            <label>
+            <label id="columnDField">
               <span id="columnDLabel">深 cm</span>
               <input id="columnD" type="number" min="1" step="1" />
             </label>

@@ -16,6 +16,7 @@ const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
+const toggleRoofButton = document.querySelector("#toggleRoof");
 const toggleDoorOpenButton = document.querySelector("#toggleDoorOpen");
 const togglePlanStorageButton = document.querySelector("#togglePlanStorage");
 const planStoragePanel = document.querySelector("#planStoragePanel");
@@ -60,9 +61,12 @@ const columnFieldLabels = {
   w: document.querySelector("#columnWLabel"),
   d: document.querySelector("#columnDLabel"),
 };
+const columnDField = document.querySelector("#columnDField");
 const objectEditorInputs = [...Object.values(columnInputs), objectHeightInput, objectRotationInput, objectVerticalInput];
+const deferredEditorInputs = new Set([columnInputs.w, columnInputs.d, objectHeightInput, objectVerticalInput]);
+const pendingEditorInputs = new WeakSet();
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -74,7 +78,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe8ecef);
 scene.fog = new THREE.Fog(0xe8ecef, 30, 68);
 
-const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 160);
+const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 180);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
@@ -117,8 +121,9 @@ const furnitureGroup = new THREE.Group();
 const fixtureGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
 const cadGroup = new THREE.Group();
+const roofGroup = new THREE.Group();
 const interactionGroup = new THREE.Group();
-root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, cadGroup, interactionGroup);
+root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, cadGroup, interactionGroup);
 
 const materials = {
   siteGround: new THREE.MeshStandardMaterial({ color: 0xe5e8e4, roughness: 0.86 }),
@@ -127,14 +132,18 @@ const materials = {
   step: new THREE.MeshStandardMaterial({ color: 0xd7d2c8, roughness: 0.78 }),
   wall: new THREE.MeshStandardMaterial({ color: 0xf6f4ee, roughness: 0.78 }),
   wallTop: new THREE.MeshStandardMaterial({ color: 0xd8b174, roughness: 0.62 }),
-  exteriorWall: new THREE.MeshStandardMaterial({ color: 0xd2d8d6, roughness: 0.8 }),
-  exteriorWallTop: new THREE.MeshStandardMaterial({ color: 0x596366, roughness: 0.66 }),
+  exteriorWall: new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.84 }),
+  exteriorWallTop: new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.84 }),
+  roof: new THREE.MeshStandardMaterial({ color: 0x657174, roughness: 0.5, metalness: 0.28, side: THREE.DoubleSide }),
+  roofSeam: new THREE.LineBasicMaterial({ color: 0x30383a, transparent: true, opacity: 0.62 }),
+  gable: new THREE.MeshStandardMaterial({ color: 0xb8c0be, roughness: 0.58, metalness: 0.14, side: THREE.DoubleSide }),
   lowWall: new THREE.MeshPhysicalMaterial({
     color: 0x9ed0d0,
     roughness: 0.18,
     transmission: 0.16,
     transparent: true,
     opacity: 0.72,
+    depthWrite: false,
   }),
   column: new THREE.MeshStandardMaterial({ color: 0x343a3d, roughness: 0.64 }),
   selectedColumn: new THREE.MeshStandardMaterial({ color: 0x343a3d, roughness: 0.64, emissive: 0x111719, emissiveIntensity: 0.12 }),
@@ -151,14 +160,18 @@ const materials = {
   white: new THREE.MeshStandardMaterial({ color: 0xf8f8f3, roughness: 0.42 }),
   metal: new THREE.MeshStandardMaterial({ color: 0xa7aaa7, metalness: 0.45, roughness: 0.35 }),
   door: new THREE.MeshStandardMaterial({ color: 0xdcc7a6, roughness: 0.55 }),
-  doorArc: new THREE.MeshBasicMaterial({ color: 0x1d6db5, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
-  sill: new THREE.MeshStandardMaterial({ color: 0x6ec9dc, roughness: 0.42, transparent: true, opacity: 0.72 }),
+  doorArc: new THREE.MeshBasicMaterial({ color: 0x1d6db5, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }),
+  sill: new THREE.MeshStandardMaterial({ color: 0x6ec9dc, roughness: 0.42, transparent: true, opacity: 0.72, depthWrite: false }),
   glass: new THREE.MeshPhysicalMaterial({
     color: 0x26343b,
     roughness: 0.2,
     transmission: 0.08,
     transparent: true,
     opacity: 0.78,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -118,
   }),
   windowFrame: new THREE.MeshStandardMaterial({
     color: 0x151a1d,
@@ -190,6 +203,18 @@ const cadMaterials = {
 };
 
 const stableWallMaterials = new Map();
+const stableConnectionMaterials = new Map();
+
+function getStableConnectionMaterial(baseMaterial, key, units) {
+  if (!stableConnectionMaterials.has(key)) {
+    const material = baseMaterial.clone();
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = -1;
+    material.polygonOffsetUnits = units;
+    stableConnectionMaterials.set(key, material);
+  }
+  return stableConnectionMaterials.get(key);
+}
 
 function getStableWallMaterial(category, index) {
   const key = `${category}-${index}`;
@@ -367,6 +392,7 @@ let redoStack = [];
 let pendingHistoryAction = null;
 let cadMode = false;
 let doorsOpen = true;
+let roofVisible = false;
 const defaultBackground = new THREE.Color(0xe8ecef);
 const defaultFog = scene.fog;
 
@@ -789,6 +815,11 @@ function bindControls() {
     cadMode = !cadMode;
     applyCadMode();
   });
+  toggleRoofButton?.addEventListener("click", () => {
+    roofVisible = !roofVisible;
+    roofGroup.visible = roofVisible && !cadMode;
+    toggleRoofButton.classList.toggle("is-active", roofVisible);
+  });
   toggleDoorOpenButton?.addEventListener("click", () => {
     doorsOpen = !doorsOpen;
     toggleDoorOpenButton.classList.toggle("is-active", doorsOpen);
@@ -860,15 +891,34 @@ function bindControls() {
   document.querySelector("#restoreOriginal")?.addEventListener("click", restoreOriginalPlan);
   importPlanFile?.addEventListener("change", importPlanFromFile);
   objectEditorInputs.forEach((input) => {
-    input?.addEventListener("input", updateSelectedObjectFromFields);
+    if (!input) return;
+    input.addEventListener("input", () => {
+      if (deferredEditorInputs.has(input)) {
+        pendingEditorInputs.add(input);
+        return;
+      }
+      updateSelectedObjectFromFields();
+    });
     ["pointerdown", "focus"].forEach((eventName) => {
-      input?.addEventListener(eventName, () => {
+      input.addEventListener(eventName, () => {
         const typeLabel = selectedObject ? objectDescriptors.get(selectedObject.id)?.typeLabel : "物件";
         beginHistoryAction(`調整${typeLabel ?? "物件"}尺寸`);
       });
     });
+    const applyPendingEditorInput = () => {
+      if (pendingEditorInputs.has(input)) {
+        pendingEditorInputs.delete(input);
+        updateSelectedObjectFromFields();
+      }
+      commitHistoryAction();
+    };
     ["change", "blur"].forEach((eventName) => {
-      input?.addEventListener(eventName, commitHistoryAction);
+      input.addEventListener(eventName, applyPendingEditorInput);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      applyPendingEditorInput();
+      input.blur();
     });
   });
   canvas.addEventListener("pointerdown", startObjectInteraction);
@@ -1058,11 +1108,17 @@ function rebuildWalls() {
     registerEditableObject(item, index, wallLabel, { x: "X cm", z: "Z cm", w: "長 cm", d: "厚 cm" }, 1);
   });
   editableLowWalls.forEach((item, index) => {
-    addEditableWall(item, [], materials.lowWall);
+    const material = getStableConnectionMaterial(materials.lowWall, `low-wall-${item.id}`, -(80 + index));
+    addEditableWall(item, [], material);
     registerEditableObject(item, index, "矮牆", { x: "X cm", z: "Z cm", w: "長 cm", d: "厚 cm" }, 2);
   });
   editableColumns.forEach((item, index) => {
-    const material = columnEditorOpen && item.id === selectedObject?.id ? materials.selectedColumn : materials.column;
+    const selected = columnEditorOpen && item.id === selectedObject?.id;
+    const material = getStableConnectionMaterial(
+      selected ? materials.selectedColumn : materials.column,
+      `column-${item.id}-${selected ? "selected" : "normal"}`,
+      -(160 + index),
+    );
     const mesh = addEditableSolid(item, material);
     mesh.userData.columnId = item.__id;
     mesh.userData.isEditableColumn = true;
@@ -1070,12 +1126,12 @@ function rebuildWalls() {
     registerEditableObject(item, index, "柱子", { x: "X cm", z: "Z cm", w: "寬 cm", d: "深 cm" }, 3);
   });
   editableDoors.forEach((item, index) => {
-    addDoor(item, wallGroup);
-    addEditableDoorSill(item);
+    addDoor(item, wallGroup, index);
+    addEditableDoorSill(item, index);
     registerEditableObject(item, index, "門", { x: "X cm", z: "Z cm", w: "門寬 cm", d: "厚 cm" }, 5, findWallReferenceById(item.wallId));
   });
   editableWindows.forEach((item, index) => {
-    addWindow(item, wallGroup);
+    addWindow(item, wallGroup, index);
     registerEditableObject(item, index, "窗戶", { x: "X cm", z: "Z cm", w: "窗寬 cm", d: "厚 cm" }, 6, findWallReferenceById(item.wallId), officeElevation + item.sillCm / 100);
   });
   if (furnitureVisible) {
@@ -1084,11 +1140,78 @@ function rebuildWalls() {
       registerEditableObject(item, index, label, { x: "X cm", z: "Z cm", w: "寬 cm", d: "深 cm" }, 4, null, officeElevation);
     });
   }
+  rebuildRoofPreview();
   addSelectedObjectOutline();
   addSelectedWallEndpointHandles();
   rebuildCadPlan();
   updateStatus();
   if (columnEditorOpen) syncColumnEditor();
+}
+
+function createShellSurface(points, indices, material) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flatMap((point) => [point.x, point.y, point.z]), 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function rebuildRoofPreview() {
+  clearGroup(roofGroup);
+  const { building } = CONSTRUCTION_PLAN;
+  const centerPoint = toWorld((building.x0 + building.x1) / 2, (building.z0 + building.z1) / 2);
+  const width = (building.x1 - building.x0) / 100;
+  const overhangCm = 30;
+  const ridgeRise = 1.75;
+  const eaveY = officeElevation + currentExteriorWallHeight;
+  const ridgeY = eaveY + ridgeRise;
+  const x0 = toWorld(building.x0 - overhangCm, 0).x;
+  const x1 = toWorld(building.x1 + overhangCm, 0).x;
+  const z0 = toWorld(0, building.z0 - overhangCm).z;
+  const z1 = toWorld(0, building.z1 + overhangCm).z;
+  const ridgeZ = toWorld(0, (building.z0 + building.z1) / 2).z;
+  roofGroup.add(createShellSurface([
+    { x: x0, y: eaveY, z: z0 },
+    { x: x1, y: eaveY, z: z0 },
+    { x: x1, y: ridgeY, z: ridgeZ },
+    { x: x0, y: ridgeY, z: ridgeZ },
+  ], [0, 1, 2, 0, 2, 3], materials.roof));
+  roofGroup.add(createShellSurface([
+    { x: x0, y: ridgeY, z: ridgeZ },
+    { x: x1, y: ridgeY, z: ridgeZ },
+    { x: x1, y: eaveY, z: z1 },
+    { x: x0, y: eaveY, z: z1 },
+  ], [0, 1, 2, 0, 2, 3], materials.roof));
+
+  const gableX0 = toWorld(building.x0, 0).x;
+  const gableX1 = toWorld(building.x1, 0).x;
+  [gableX0, gableX1].forEach((gableX, index) => {
+    roofGroup.add(createShellSurface([
+      { x: gableX, y: eaveY, z: toWorld(0, building.z0).z },
+      { x: gableX, y: eaveY, z: toWorld(0, building.z1).z },
+      { x: gableX, y: ridgeY, z: ridgeZ },
+    ], index === 0 ? [0, 1, 2] : [0, 2, 1], materials.gable));
+  });
+
+  const roofSeamPoints = [];
+  for (let x = building.x0 - overhangCm; x <= building.x1 + overhangCm; x += 100) {
+    const worldX = toWorld(x, 0).x;
+    roofSeamPoints.push(
+      new THREE.Vector3(worldX, eaveY + 0.015, z0),
+      new THREE.Vector3(worldX, ridgeY + 0.015, ridgeZ),
+      new THREE.Vector3(worldX, ridgeY + 0.015, ridgeZ),
+      new THREE.Vector3(worldX, eaveY + 0.015, z1),
+    );
+  }
+  roofGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(roofSeamPoints), materials.roofSeam));
+  const ridgeCap = new THREE.Mesh(new THREE.BoxGeometry(width + 0.6, 0.12, 0.14), materials.roof);
+  ridgeCap.position.set(centerPoint.x, ridgeY + 0.035, ridgeZ);
+  roofGroup.add(ridgeCap);
+
+  roofGroup.visible = roofVisible && !cadMode;
 }
 
 function registerEditableObject(item, index, typeLabel, fieldLabels, priority, linkedWall = null, baseY = officeElevation) {
@@ -1136,7 +1259,7 @@ function getSelectedEditableObject() {
 }
 
 function setEditableMetrics(item, metrics) {
-  const minimumWidth = item.type === "door" || item.type === "window" ? 40 : 10;
+  const minimumWidth = item.type === "window" ? 1 : item.type === "door" ? 40 : 10;
   const minimumDepth = item.type === "column" ? 10 : 3;
   const minimumHeight = item.type === "door" ? 150 : item.type === "window" ? 30 : 10;
   const previousWall = item.type === "wall" ? { x: item.x, z: item.z, rot: item.rot ?? 0 } : null;
@@ -1148,7 +1271,9 @@ function setEditableMetrics(item, metrics) {
   item.x = Math.round(Number.isFinite(Number(metrics.x)) ? Number(metrics.x) : item.x);
   item.z = Math.round(Number.isFinite(Number(metrics.z)) ? Number(metrics.z) : item.z);
   item.w = Math.round(Math.max(Number(metrics.w) || item.w, minimumWidth));
-  item.d = Math.round(Math.max(Number(metrics.d) || item.d, minimumDepth));
+  if (!["door", "window"].includes(item.type)) {
+    item.d = Math.round(Math.max(Number(metrics.d) || item.d, minimumDepth));
+  }
   const maximumHeight = item.type === "column" ? 1000 : item.type === "wall" ? 600 : 500;
   item.h = Math.round(Math.min(maximumHeight, Math.max(Number(metrics.h) || item.h, minimumHeight)));
   item.rot = normalizeAngle(Math.round(Number.isFinite(Number(metrics.rot)) ? Number(metrics.rot) : item.rot ?? 0));
@@ -1406,6 +1531,7 @@ function snapOpeningToWall(item, wall) {
   item.x = Math.round(wall.x + axisX * along);
   item.z = Math.round(wall.z + axisZ * along);
   item.rot = normalizeAngle(Math.round(wall.rot ?? 0));
+  item.d = Math.max(1, Math.round(wall.d));
   item.wallId = wall.id;
 }
 
@@ -1426,7 +1552,8 @@ function updateOpeningWallLink(item, { preferLinkedWall = false, walls = editabl
     item.wallId = null;
     return;
   }
-  if (item.w > wallReference.item.w) item.w = Math.max(40, Math.round(wallReference.item.w));
+  const minimumWidth = item.type === "window" ? 1 : 40;
+  if (item.w > wallReference.item.w) item.w = Math.max(minimumWidth, Math.round(wallReference.item.w));
   snapOpeningToWall(item, wallReference.item);
   clampWindowVertical(item, wallReference.item);
 }
@@ -1507,8 +1634,10 @@ function addEditableSolid(item, material, baseCm = 0, heightCm = item.h, cap = f
   return mesh;
 }
 
-function addEditableDoorSill(item) {
-  addEditableSolid({ ...item, h: 4 }, materials.sill, 1, 4, false);
+function addEditableDoorSill(item, index) {
+  const material = getStableConnectionMaterial(materials.sill, `door-sill-${item.id}`, -(220 + index));
+  const mesh = addEditableSolid({ ...item, h: 4 }, material, 1, 4, false);
+  mesh.renderOrder = 6;
 }
 
 function registerSelectableObject(descriptor, pickMesh, priority = 1) {
@@ -1823,7 +1952,7 @@ function addCadPolyline(points, material, y) {
   cadGroup.add(line);
 }
 
-function addWindow(item, group) {
+function addWindow(item, group, index = 0) {
   const p = toWorld(item.x, item.z);
   const rotation = ((item.rot ?? 0) * Math.PI) / 180;
   const width = item.w / 100;
@@ -1835,13 +1964,20 @@ function addWindow(item, group) {
   const glassHeight = Math.max(item.h / 100, 0.3);
   const sillHeight = officeElevation + item.sillCm / 100 + glassHeight / 2;
   const frameBar = Math.min(0.065, glassHeight * 0.12);
+  const materialOffset = index * 10;
+  const glassMaterial = getStableConnectionMaterial(materials.glass, `window-${item.id}-glass`, -(320 + materialOffset));
+  const frameMaterials = Array.from({ length: 5 }, (_, partIndex) => getStableConnectionMaterial(
+    materials.windowFrame,
+    `window-${item.id}-frame-${partIndex}`,
+    -(330 + materialOffset + partIndex),
+  ));
 
-  addBoxToGroup(windowGroup, width, glassHeight, glassDepth, materials.glass, 0, sillHeight, 0);
-  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, materials.windowFrame, 0, sillHeight + glassHeight / 2 + frameBar / 2, 0);
-  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, materials.windowFrame, 0, sillHeight - glassHeight / 2 - frameBar / 2, 0);
-  addBoxToGroup(windowGroup, width + 0.04, frameBar, frameDepth, materials.windowFrame, 0, sillHeight, 0);
-  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, materials.windowFrame, -width / 2 - 0.03, sillHeight, 0);
-  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, materials.windowFrame, width / 2 + 0.03, sillHeight, 0);
+  addBoxToGroup(windowGroup, width, glassHeight, glassDepth, glassMaterial, 0, sillHeight, 0).renderOrder = 7;
+  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, frameMaterials[0], 0, sillHeight + glassHeight / 2 + frameBar / 2, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, frameMaterials[1], 0, sillHeight - glassHeight / 2 - frameBar / 2, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, width + 0.04, frameBar, frameDepth, frameMaterials[2], 0, sillHeight, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, frameMaterials[3], -width / 2 - 0.03, sillHeight, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, frameMaterials[4], width / 2 + 0.03, sillHeight, 0).renderOrder = 8;
 
   windowGroup.position.set(p.x, 0, p.z);
   windowGroup.rotation.y = rotation;
@@ -2198,6 +2334,7 @@ function applyCadMode() {
     furnitureGroup.visible = false;
     fixtureGroup.visible = false;
     labelGroup.visible = false;
+    roofGroup.visible = false;
     cadGroup.visible = true;
     scene.background = new THREE.Color(0xffffff);
     scene.fog = null;
@@ -2209,6 +2346,7 @@ function applyCadMode() {
     furnitureGroup.visible = furnitureVisible;
     fixtureGroup.visible = true;
     labelGroup.visible = document.querySelector("#toggleLabels")?.classList.contains("is-active") ?? true;
+    roofGroup.visible = roofVisible;
     cadGroup.visible = false;
     scene.background = defaultBackground.clone();
     scene.fog = defaultFog;
@@ -2384,7 +2522,7 @@ function addFootprint(item, height, material, group, options = {}) {
   return mesh;
 }
 
-function addDoor(item, group) {
+function addDoor(item, group, index = 0) {
   const angle = (item.rot * Math.PI) / 180;
   const axis = { x: Math.cos(angle), z: Math.sin(angle) };
   const hingeSign = item.hingeAtStart ? -1 : 1;
@@ -2397,11 +2535,13 @@ function addDoor(item, group) {
   const height = Math.max(item.h / 100, 1.5);
   const length = Math.max(item.w / 100, 0.4);
   const thickness = Math.max(item.d / 100, 0.035);
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), materials.door);
+  const panelMaterial = getStableConnectionMaterial(materials.door, `door-${item.id}`, -(260 + index));
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), panelMaterial);
   panel.position.set(hinge.x + dir.x * length * 0.5, officeElevation + height * 0.5, hinge.z + dir.z * length * 0.5);
   panel.rotation.y = -Math.atan2(dir.z, dir.x);
   panel.castShadow = true;
   panel.receiveShadow = true;
+  panel.renderOrder = 7;
   group.add(panel);
 
   const handle = new THREE.Mesh(new THREE.SphereGeometry(0.035, 14, 10), materials.metal);
@@ -2500,12 +2640,16 @@ function syncColumnEditor() {
   const descriptor = selectedObject ? objectDescriptors.get(selectedObject.id) : null;
   const selected = descriptor ? getEditableObjectById(descriptor.id, descriptor.type) : null;
   const editable = Boolean(columnEditorOpen && descriptor?.editable && selected);
+  const wallOpeningSelected = ["door", "window"].includes(descriptor?.type);
   objectEditorInputs.forEach((input) => {
     if (input) input.disabled = !editable;
   });
-  if (objectRotationInput && ["door", "window"].includes(descriptor?.type)) {
+  if (objectRotationInput && wallOpeningSelected) {
     objectRotationInput.disabled = true;
   }
+  if (columnDField) columnDField.hidden = wallOpeningSelected;
+  if (columnInputs.d && wallOpeningSelected) columnInputs.d.disabled = true;
+  if (columnInputs.w) columnInputs.w.min = descriptor?.type === "window" ? "1" : descriptor?.type === "door" ? "40" : "10";
   if (objectHeightInput) objectHeightInput.max = descriptor?.type === "column" ? "1000" : descriptor?.type === "wall" ? "600" : "500";
   if (objectVerticalField) objectVerticalField.hidden = descriptor?.type !== "window";
   if (objectVerticalInput) objectVerticalInput.disabled = !editable || descriptor?.type !== "window";
@@ -2530,6 +2674,7 @@ function syncColumnEditor() {
     });
     if (objectTypeOutput) objectTypeOutput.textContent = "尚未選取";
     if (objectIdOutput) objectIdOutput.textContent = "點選模型中的物件";
+    if (columnDField) columnDField.hidden = false;
     if (objectVerticalField) objectVerticalField.hidden = true;
     if (objectRelation) objectRelation.hidden = true;
     Object.entries({ x: "X", z: "Z", w: "寬", d: "深" }).forEach(([key, label]) => {
@@ -2814,7 +2959,7 @@ function normalizeEditableItems(items, type, limit = 200) {
     if (Object.values(numeric).some((value) => !Number.isFinite(value) || Math.abs(value) > 100000)) {
       throw new Error(`${type} 第 ${index + 1} 筆尺寸不正確`);
     }
-    const minimumWidth = type === "door" || type === "window" ? 40 : 10;
+    const minimumWidth = type === "window" ? 1 : type === "door" ? 40 : 10;
     const minimumDepth = type === "column" ? 10 : 3;
     const minimumHeight = type === "door" ? 150 : type === "window" ? 30 : type === "furniture" ? 1 : 10;
     if (numeric.w < minimumWidth || numeric.d < minimumDepth || numeric.h < minimumHeight) {
