@@ -16,31 +16,46 @@
         <div class="tools">
           <button id="resetView" class="icon-button" type="button" title="重置視角" aria-label="重置視角" data-lucide="rotate-ccw"></button>
           <button id="topView" class="icon-button" type="button" title="俯視" aria-label="俯視" data-lucide="scan"></button>
-          <button id="toggleWallHeight" class="icon-button" type="button" title="牆高" aria-label="牆高" aria-expanded="false" aria-controls="wallHeightPanel" data-lucide="ruler"></button>
+          <button id="toggleWallHeight" class="icon-button" type="button" title="牆面高度" aria-label="牆面高度" aria-expanded="false" aria-controls="wallHeightPanel" data-lucide="move-vertical"></button>
           <button id="toggleCadView" class="icon-button" type="button" title="黑白線條俯視圖" aria-label="黑白線條俯視圖" data-lucide="drafting-compass"></button>
+          <button id="toggleDoorOpen" class="icon-button is-active" type="button" title="將門片關閉展示" aria-label="將門片關閉展示" data-lucide="door-open"></button>
           <button id="toggleFurniture" class="icon-button is-active" type="button" title="顯示/隱藏家具" aria-label="顯示/隱藏家具" data-lucide="eye-off"></button>
-          <button id="toggleColumnEditor" class="icon-button" type="button" title="柱子臨時編輯" aria-label="柱子臨時編輯" data-lucide="columns-3"></button>
+          <button id="toggleColumnEditor" class="icon-button" type="button" title="物件編輯" aria-label="物件編輯" aria-expanded="false" aria-controls="columnEditor" data-lucide="pencil"></button>
           <button id="togglePlanStorage" class="icon-button" type="button" title="調整方案" aria-label="調整方案" aria-expanded="false" aria-controls="planStoragePanel" data-lucide="save"></button>
           <button id="toggleLabels" class="icon-button is-active" type="button" title="標籤" aria-label="標籤" data-lucide="tags"></button>
         </div>
       </header>
       <section class="hud panel wall-height-panel" id="wallHeightPanel" hidden>
-        <label>
-          <span>牆高 <output id="wallHeightValue">2.00m</output></span>
-          <input id="wallHeight" type="range" min="1.5" max="3" step="0.05" value="2" />
+        <label class="wall-height-control">
+          <span><i class="wall-swatch wall-swatch--exterior" aria-hidden="true"></i>外牆 <output id="exteriorWallHeightValue">5.00m</output></span>
+          <input id="exteriorWallHeight" type="number" min="1.5" max="6" step="0.05" value="5" inputmode="decimal" aria-label="外牆高度公尺" />
+        </label>
+        <label class="wall-height-control">
+          <span><i class="wall-swatch wall-swatch--interior" aria-hidden="true"></i>隔間 <output id="wallHeightValue">3.00m</output></span>
+          <input id="wallHeight" type="number" min="1.5" max="6" step="0.05" value="3" inputmode="decimal" aria-label="隔間牆高度公尺" />
         </label>
       </section>
       <section class="hud plan-storage-panel" id="planStoragePanel" hidden>
         <div class="plan-storage__header">
           <div class="plan-storage__title">
-            <strong>調整方案</strong>
-            <span id="planStorageStatus" aria-live="polite">尚未儲存本機草稿</span>
+            <strong>方案管理</strong>
+            <span id="planStorageStatus" aria-live="polite">原始格局（永久鎖定）</span>
           </div>
           <button id="closePlanStorage" class="mini-icon-button" type="button" title="關閉調整方案" aria-label="關閉調整方案" data-lucide="x"></button>
         </div>
+        <div class="scheme-toolbar">
+          <select id="schemeSelect" aria-label="選擇方案">
+            <option value="original">原始格局（鎖定）</option>
+          </select>
+          <div class="scheme-toolbar__actions">
+            <button id="newScheme" type="button" title="新增方案" aria-label="新增方案"><i data-lucide="plus"></i></button>
+            <button id="renameScheme" type="button" title="重新命名方案" aria-label="重新命名方案"><i data-lucide="pencil"></i></button>
+            <button id="deleteScheme" type="button" title="刪除方案" aria-label="刪除方案"><i data-lucide="trash-2"></i></button>
+          </div>
+        </div>
         <div class="plan-storage__actions">
-          <button id="saveDraft" type="button"><i data-lucide="save"></i><span>儲存草稿</span></button>
-          <button id="loadDraft" type="button"><i data-lucide="folder-open"></i><span>載入草稿</span></button>
+          <button id="saveDraft" type="button"><i data-lucide="save"></i><span>儲存方案</span></button>
+          <button id="loadDraft" type="button"><i data-lucide="folder-open"></i><span>載入方案</span></button>
           <button id="exportPlan" type="button"><i data-lucide="file-down"></i><span>匯出方案</span></button>
           <button id="importPlan" type="button"><i data-lucide="file-up"></i><span>匯入方案</span></button>
           <button id="restoreOriginal" class="plan-storage__restore" type="button"><i data-lucide="history"></i><span>恢復原始</span></button>
@@ -50,34 +65,66 @@
       <section class="hud column-editor" id="columnEditor" hidden>
         <div class="column-editor__header">
           <div class="column-editor__title">
-            <strong>柱子臨時編輯</strong>
-            <span id="columnHint">重整後恢復原樣</span>
+            <strong>物件編輯</strong>
+            <span id="columnHint">點選牆、柱、門、窗或家具</span>
           </div>
-          <button id="collapseColumnEditor" class="mini-icon-button" type="button" title="收合柱子編輯" aria-label="收合柱子編輯" aria-expanded="true" data-lucide="chevron-up"></button>
+          <div class="column-editor__header-actions">
+            <button id="undoEdit" class="mini-icon-button" type="button" title="復原" aria-label="復原" disabled><i data-lucide="undo-2"></i></button>
+            <button id="redoEdit" class="mini-icon-button" type="button" title="重做" aria-label="重做" disabled><i data-lucide="redo-2"></i></button>
+            <button id="collapseColumnEditor" class="mini-icon-button" type="button" title="收合物件編輯" aria-label="收合物件編輯" aria-expanded="true"><i data-lucide="chevron-up"></i></button>
+          </div>
         </div>
         <div class="column-editor__body" id="columnEditorBody">
-          <div class="column-editor__actions">
-            <button id="addColumn" type="button">新增</button>
-            <button id="deleteColumn" type="button">刪除</button>
-            <button id="resetColumns" type="button">重設</button>
+          <div class="object-summary">
+            <strong id="objectType">尚未選取</strong>
+            <span id="objectId">點選模型中的物件</span>
+          </div>
+          <div class="object-toolbar">
+            <select id="addObjectType" aria-label="新增物件類型">
+              <option value="wall">牆面</option>
+              <option value="column">柱子</option>
+              <option value="door">門</option>
+              <option value="window">窗戶</option>
+            </select>
+            <button id="addObject" class="object-tool-button" type="button" title="新增所選物件" aria-label="新增所選物件"><i data-lucide="plus"></i></button>
+            <button id="deleteObject" class="object-tool-button" type="button" title="刪除目前物件" aria-label="刪除目前物件" disabled><i data-lucide="trash-2"></i></button>
+            <button id="splitWall" class="object-tool-button" type="button" title="從牆面中點分割" aria-label="從牆面中點分割" disabled><i data-lucide="split"></i></button>
+            <button id="flipDoor" class="object-tool-button" type="button" title="翻轉門片方向" aria-label="翻轉門片方向" disabled><i data-lucide="refresh-cw"></i></button>
+            <button id="resetColumns" class="object-tool-button" type="button" title="重設全部柱子" aria-label="重設全部柱子"><i data-lucide="rotate-ccw"></i></button>
           </div>
           <div class="column-fields">
             <label>
-              <span>X</span>
+              <span id="columnXLabel">X cm</span>
               <input id="columnX" type="number" step="1" />
             </label>
             <label>
-              <span>Z</span>
+              <span id="columnZLabel">Z cm</span>
               <input id="columnZ" type="number" step="1" />
             </label>
             <label>
-              <span>寬</span>
-              <input id="columnW" type="number" min="10" step="1" />
+              <span id="columnWLabel">寬 cm</span>
+              <input id="columnW" type="number" min="1" step="1" />
             </label>
             <label>
-              <span>深</span>
-              <input id="columnD" type="number" min="10" step="1" />
+              <span id="columnDLabel">深 cm</span>
+              <input id="columnD" type="number" min="1" step="1" />
             </label>
+            <label>
+              <span id="objectHeightLabel">高 cm</span>
+              <input id="objectHeight" type="number" min="1" max="1000" step="1" />
+            </label>
+            <label>
+              <span>角度 °</span>
+              <input id="objectRotation" type="number" step="1" />
+            </label>
+            <label id="objectVerticalField" hidden>
+              <span>窗台高 cm</span>
+              <input id="objectVertical" type="number" min="0" max="490" step="1" />
+            </label>
+          </div>
+          <div class="object-relation" id="objectRelation" hidden>
+            <span>所屬牆面</span>
+            <output id="objectLinkedWall"></output>
           </div>
         </div>
       </section>

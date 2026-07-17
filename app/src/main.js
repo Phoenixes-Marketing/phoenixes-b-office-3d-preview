@@ -8,28 +8,59 @@ createIcons({ icons });
 const canvas = document.querySelector("#scene");
 const planOpacity = document.querySelector("#planOpacity");
 const wallHeightInput = document.querySelector("#wallHeight");
+const exteriorWallHeightInput = document.querySelector("#exteriorWallHeight");
 const wallHeightPanel = document.querySelector("#wallHeightPanel");
 const wallHeightValue = document.querySelector("#wallHeightValue");
+const exteriorWallHeightValue = document.querySelector("#exteriorWallHeightValue");
 const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
+const toggleDoorOpenButton = document.querySelector("#toggleDoorOpen");
 const togglePlanStorageButton = document.querySelector("#togglePlanStorage");
 const planStoragePanel = document.querySelector("#planStoragePanel");
 const closePlanStorageButton = document.querySelector("#closePlanStorage");
 const planStorageStatus = document.querySelector("#planStorageStatus");
+const saveDraftButton = document.querySelector("#saveDraft");
 const loadDraftButton = document.querySelector("#loadDraft");
 const importPlanFile = document.querySelector("#importPlanFile");
+const schemeSelect = document.querySelector("#schemeSelect");
+const newSchemeButton = document.querySelector("#newScheme");
+const renameSchemeButton = document.querySelector("#renameScheme");
+const deleteSchemeButton = document.querySelector("#deleteScheme");
 const columnEditor = document.querySelector("#columnEditor");
 const columnEditorBody = document.querySelector("#columnEditorBody");
 const collapseColumnEditorButton = document.querySelector("#collapseColumnEditor");
+const undoEditButton = document.querySelector("#undoEdit");
+const redoEditButton = document.querySelector("#redoEdit");
 const columnHint = document.querySelector("#columnHint");
+const objectTypeOutput = document.querySelector("#objectType");
+const objectIdOutput = document.querySelector("#objectId");
+const objectHeightInput = document.querySelector("#objectHeight");
+const objectRotationInput = document.querySelector("#objectRotation");
+const objectVerticalField = document.querySelector("#objectVerticalField");
+const objectVerticalInput = document.querySelector("#objectVertical");
+const objectHeightLabel = document.querySelector("#objectHeightLabel");
+const objectRelation = document.querySelector("#objectRelation");
+const objectLinkedWall = document.querySelector("#objectLinkedWall");
+const addObjectTypeSelect = document.querySelector("#addObjectType");
+const addObjectButton = document.querySelector("#addObject");
+const deleteObjectButton = document.querySelector("#deleteObject");
+const splitWallButton = document.querySelector("#splitWall");
+const flipDoorButton = document.querySelector("#flipDoor");
 const columnInputs = {
   x: document.querySelector("#columnX"),
   z: document.querySelector("#columnZ"),
   w: document.querySelector("#columnW"),
   d: document.querySelector("#columnD"),
 };
+const columnFieldLabels = {
+  x: document.querySelector("#columnXLabel"),
+  z: document.querySelector("#columnZLabel"),
+  w: document.querySelector("#columnWLabel"),
+  d: document.querySelector("#columnDLabel"),
+};
+const objectEditorInputs = [...Object.values(columnInputs), objectHeightInput, objectRotationInput, objectVerticalInput];
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -50,7 +81,7 @@ controls.dampingFactor = 0.08;
 controls.screenSpacePanning = true;
 controls.enablePan = true;
 controls.minDistance = 4;
-controls.maxDistance = 48;
+controls.maxDistance = 160;
 controls.maxPolarAngle = Math.PI * 0.49;
 controls.touches.ONE = THREE.TOUCH.ROTATE;
 controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
@@ -60,8 +91,22 @@ const pointer = new THREE.Vector2();
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const dragPoint = new THREE.Vector3();
 const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
+const WORKSPACE_STORAGE_KEY = "phoenixes-b-office-3d-preview:workspace:v1";
 const PLAN_FORMAT = "phoenixes-office-column-plan";
-const PLAN_SCHEMA_VERSION = 1;
+const PLAN_SCHEMA_VERSION = 5;
+const WORKSPACE_FORMAT = "phoenixes-office-design-workspace";
+const WORKSPACE_SCHEMA_VERSION = 1;
+const ORIGINAL_SCHEME_ID = "original";
+const MAX_SCHEMES = 20;
+const HISTORY_LIMIT = 50;
+const STANDARD_DOOR_WIDTH_CM = 90;
+const STANDARD_DOOR_HEIGHT_CM = 210;
+const STANDARD_DOOR_THICKNESS_CM = 5;
+const WALL_ENDPOINT_SNAP_CM = 20;
+const DEFAULT_WALL_THICKNESS_CM = 14;
+const DEFAULT_INTERIOR_WALL_HEIGHT_CM = 300;
+const DEFAULT_EXTERIOR_WALL_HEIGHT_CM = 500;
+const DEFAULT_COLUMN_HEIGHT_CM = 500;
 
 const root = new THREE.Group();
 scene.add(root);
@@ -72,7 +117,8 @@ const furnitureGroup = new THREE.Group();
 const fixtureGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
 const cadGroup = new THREE.Group();
-root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, cadGroup);
+const interactionGroup = new THREE.Group();
+root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, cadGroup, interactionGroup);
 
 const materials = {
   siteGround: new THREE.MeshStandardMaterial({ color: 0xe5e8e4, roughness: 0.86 }),
@@ -81,6 +127,8 @@ const materials = {
   step: new THREE.MeshStandardMaterial({ color: 0xd7d2c8, roughness: 0.78 }),
   wall: new THREE.MeshStandardMaterial({ color: 0xf6f4ee, roughness: 0.78 }),
   wallTop: new THREE.MeshStandardMaterial({ color: 0xd8b174, roughness: 0.62 }),
+  exteriorWall: new THREE.MeshStandardMaterial({ color: 0xd2d8d6, roughness: 0.8 }),
+  exteriorWallTop: new THREE.MeshStandardMaterial({ color: 0x596366, roughness: 0.66 }),
   lowWall: new THREE.MeshPhysicalMaterial({
     color: 0x9ed0d0,
     roughness: 0.18,
@@ -88,9 +136,12 @@ const materials = {
     transparent: true,
     opacity: 0.72,
   }),
-  column: new THREE.MeshStandardMaterial({ color: 0xbb4b45, roughness: 0.58 }),
-  selectedColumn: new THREE.MeshStandardMaterial({ color: 0x2f8f7c, roughness: 0.56, emissive: 0x0c2d25, emissiveIntensity: 0.12 }),
+  column: new THREE.MeshStandardMaterial({ color: 0x343a3d, roughness: 0.64 }),
+  selectedColumn: new THREE.MeshStandardMaterial({ color: 0x343a3d, roughness: 0.64, emissive: 0x111719, emissiveIntensity: 0.12 }),
   columnPick: new THREE.MeshBasicMaterial({ color: 0x2f8f7c, transparent: true, opacity: 0, depthWrite: false }),
+  objectPick: new THREE.MeshBasicMaterial({ color: 0x2f8f7c, transparent: true, opacity: 0, depthWrite: false }),
+  wallHandle: new THREE.MeshBasicMaterial({ color: 0x167565, transparent: true, opacity: 0.9, depthTest: false }),
+  selectionLine: new THREE.LineBasicMaterial({ color: 0x167565, transparent: true, opacity: 0.95, depthTest: false }),
   wood: new THREE.MeshStandardMaterial({ color: 0xcaa58a, roughness: 0.64 }),
   paleWood: new THREE.MeshStandardMaterial({ color: 0xdfc6a7, roughness: 0.66 }),
   chair: new THREE.MeshStandardMaterial({ color: 0x79aa6f, roughness: 0.72 }),
@@ -103,13 +154,24 @@ const materials = {
   doorArc: new THREE.MeshBasicMaterial({ color: 0x1d6db5, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
   sill: new THREE.MeshStandardMaterial({ color: 0x6ec9dc, roughness: 0.42, transparent: true, opacity: 0.72 }),
   glass: new THREE.MeshPhysicalMaterial({
-    color: 0xb9dbe4,
-    roughness: 0.08,
-    transmission: 0.35,
+    color: 0x26343b,
+    roughness: 0.2,
+    transmission: 0.08,
     transparent: true,
-    opacity: 0.48,
+    opacity: 0.78,
   }),
-  windowFrame: new THREE.MeshStandardMaterial({ color: 0xc4b7a2, roughness: 0.55 }),
+  windowFrame: new THREE.MeshStandardMaterial({
+    color: 0x151a1d,
+    roughness: 0.42,
+    metalness: 0.28,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  }),
+  parking: new THREE.MeshStandardMaterial({ color: 0x8a908d, roughness: 0.92 }),
+  road: new THREE.MeshStandardMaterial({ color: 0x555c5c, roughness: 0.96 }),
+  marking: new THREE.MeshStandardMaterial({ color: 0xf1f0e9, roughness: 0.72 }),
+  curb: new THREE.MeshStandardMaterial({ color: 0xc9cbc6, roughness: 0.86 }),
   fabric: new THREE.MeshStandardMaterial({ color: 0xbfc9c2, roughness: 0.88 }),
   cushion: new THREE.MeshStandardMaterial({ color: 0xe7e3da, roughness: 0.86 }),
   rug: new THREE.MeshStandardMaterial({ color: 0xb8c7c0, roughness: 0.9, transparent: true, opacity: 0.72 }),
@@ -120,11 +182,40 @@ const materials = {
 };
 
 const cadMaterials = {
+  grid: new THREE.LineBasicMaterial({ color: 0xaab2b2, transparent: true, opacity: 0.22, depthTest: false }),
   heavy: new THREE.LineBasicMaterial({ color: 0x0e1111, transparent: true, opacity: 0.95, depthTest: false }),
   medium: new THREE.LineBasicMaterial({ color: 0x1f2424, transparent: true, opacity: 0.78, depthTest: false }),
   light: new THREE.LineBasicMaterial({ color: 0x5b6262, transparent: true, opacity: 0.5, depthTest: false }),
   furniture: new THREE.LineBasicMaterial({ color: 0x252a2a, transparent: true, opacity: 0.62, depthTest: false }),
 };
+
+const stableWallMaterials = new Map();
+
+function getStableWallMaterial(category, index) {
+  const key = `${category}-${index}`;
+  if (!stableWallMaterials.has(key)) {
+    const baseMaterial = category === "exterior" ? materials.exteriorWall : materials.wall;
+    const material = baseMaterial.clone();
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = -1;
+    material.polygonOffsetUnits = -(index + 1) * 0.5;
+    stableWallMaterials.set(key, material);
+  }
+  return stableWallMaterials.get(key);
+}
+
+function getStableWallTopMaterial(category, index) {
+  const key = `top-${category}-${index}`;
+  if (!stableWallMaterials.has(key)) {
+    const baseMaterial = category === "exterior" ? materials.exteriorWallTop : materials.wallTop;
+    const material = baseMaterial.clone();
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = -1;
+    material.polygonOffsetUnits = -(index + 1) * 0.5;
+    stableWallMaterials.set(key, material);
+  }
+  return stableWallMaterials.get(key);
+}
 
 const DESIGN_ITEMS = [
   { type: "workbench", x: 255, z: 235, w: 230, d: 62, rot: 0 },
@@ -184,12 +275,58 @@ const DESIGN_ITEMS = [
 ];
 
 const WINDOW_ITEMS = [
-  { x: 2185, z: -18, w: 420, d: 4, rot: 0 },
-  { x: 2690, z: 350, w: 420, d: 4, rot: 90 },
-  { x: 2690, z: 960, w: 360, d: 4, rot: 90 },
-  { x: 1700, z: 1630, w: 520, d: 4, rot: 0 },
-  { x: 1010, z: 1630, w: 360, d: 4, rot: 0 },
+  { source: "window-1", x: 2185, z: -18, w: 420, d: 8, h: 110, sillCm: 80, rot: 0 },
+  { source: "window-2", x: 2690, z: 350, w: 420, d: 8, h: 110, sillCm: 80, rot: 90 },
+  { source: "window-3", x: 2690, z: 960, w: 360, d: 8, h: 110, sillCm: 80, rot: 90 },
+  { source: "window-4", x: 1700, z: 1630, w: 520, d: 8, h: 110, sillCm: 80, rot: 0 },
+  { source: "window-5", x: 1010, z: 1630, w: 360, d: 8, h: 110, sillCm: 80, rot: 0 },
 ];
+
+const AREA_LABELS = [
+  { text: "維修部儲藏室", x: 260, z: 210 },
+  { text: "維修部", x: 835, z: 200 },
+  { text: "倉庫區", x: 1620, z: 205 },
+  { text: "20人會議室", x: 2440, z: 220 },
+  { text: "產品展示/介紹室", x: 1510, z: 615 },
+  { text: "廁所", x: 360, z: 800 },
+  { text: "會計檔案室", x: 780, z: 760 },
+  { text: "茶水間", x: 2350, z: 650 },
+  { text: "總經理室", x: 245, z: 1390 },
+  { text: "協理室", x: 690, z: 1390 },
+  { text: "會計部", x: 1010, z: 1425 },
+  { text: "業務辦公區", x: 1650, z: 1400 },
+  { text: "櫃檯/行銷部", x: 2320, z: 935 },
+];
+
+const CONSTRUCTION_PLAN = {
+  building: { x0: 0, z0: 0, x1: 2755, z1: 1630 },
+  sourceBuilding: { width: 2705, depth: 1625 },
+  siteBounds: { x0: -260, z0: -250, x1: 4100, z1: 2380 },
+  levels: { southRoad: 15, eastParking: 25, porch: 30, threshold: 35, office: 45 },
+  axesX: [
+    { label: "F", value: 97 },
+    { label: "E", value: 593 },
+    { label: "D", value: 1145 },
+    { label: "C", value: 1690 },
+    { label: "B", value: 2230 },
+    { label: "A", value: 2755 },
+  ],
+  axesZ: [
+    { label: "5", value: 35 },
+    { label: "4", value: 580 },
+    { label: "3", value: 1190 },
+    { label: "2", value: 1290 },
+    { label: "1", value: 1580 },
+  ],
+  horizontalSegments: [97, 496, 552, 545, 540, 525],
+  verticalSegments: [35, 545, 610, 100, 290, 50],
+  eastSetbackCm: 420,
+  eastParking: { x0: 2755, z0: 40, stallWidth: 250, stallDepth: 550, count: 4 },
+  southParking: { startX: 180, centerZ: 1850, spacing: 430, stallWidth: 250, stallDepth: 500, count: 5, angle: 33 },
+  southParkingDepth: 400,
+  roadEdgeX: 3305,
+  roadEdgeZ: 2030,
+};
 
 const HUMAN_SCALE = { x: 2275, z: 1355, rot: -25 };
 
@@ -200,19 +337,36 @@ let planMesh;
 let baseFloor;
 let officeElevation = 0.6;
 let currentWallHeight = Number(wallHeightInput.value);
+let currentExteriorWallHeight = Number(exteriorWallHeightInput.value);
 let wallHeightPanelOpen = false;
 let planStoragePanelOpen = false;
 let furnitureVisible = true;
 let columnEditorOpen = false;
 let columnEditorCollapsed = false;
+let editableWalls = [];
+let editableLowWalls = [];
 let editableColumns = [];
+let editableDoors = [];
+let editableWindows = [];
+let editableFurniture = [];
 let selectedColumnId = null;
 let columnMeshes = [];
 let columnPickMeshes = [];
+let objectPickMeshes = [];
+let objectDescriptors = new Map();
+let selectedObject = null;
 let nextColumnId = 1;
-let draggingColumnId = null;
-let dragColumnOffset = { x: 0, z: 0 };
+let draggingObjectId = null;
+let draggingObjectMode = "move";
+let fixedWallEndpoint = null;
+let dragObjectOffset = { x: 0, z: 0 };
+let workspace = createEmptyWorkspace();
+let selectedSchemeId = ORIGINAL_SCHEME_ID;
+let undoStack = [];
+let redoStack = [];
+let pendingHistoryAction = null;
 let cadMode = false;
+let doorsOpen = true;
 const defaultBackground = new THREE.Color(0xe8ecef);
 const defaultFog = scene.fog;
 
@@ -220,19 +374,38 @@ init();
 
 async function init() {
   data = await fetch("./model-data.json").then((res) => res.json());
+  calibrateModelToConstruction(data);
   officeElevation = (data.levels?.officeCm ?? 60) / 100;
   wallHeightInput.min = "1.5";
-  wallHeightInput.max = "3";
+  wallHeightInput.max = "6";
   wallHeightInput.step = "0.05";
-  wallHeightInput.value = ((data.defaults?.wallHeightCm ?? 200) / 100).toFixed(2);
+  wallHeightInput.value = (DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100).toFixed(2);
+  exteriorWallHeightInput.min = "1.5";
+  exteriorWallHeightInput.max = "6";
+  exteriorWallHeightInput.step = "0.05";
+  exteriorWallHeightInput.value = (DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100).toFixed(2);
   currentWallHeight = Number(wallHeightInput.value);
+  currentExteriorWallHeight = Number(exteriorWallHeightInput.value);
   updateWallHeightLabel();
   bounds = getBounds(data);
   center = {
     x: (bounds.x0 + bounds.x1) / 2,
     z: (bounds.z0 + bounds.z1) / 2,
   };
+  editableWalls = makeEditableFootprints(data.walls, "wall", DEFAULT_INTERIOR_WALL_HEIGHT_CM);
+  assignWallCategories(editableWalls);
+  applyWallCategoryHeights();
+  normalizeAmbiguousToiletWallStubs(editableWalls);
+  editableLowWalls = makeEditableFootprints(data.lowWalls, "low-wall", data.defaults?.lowWallHeightCm ?? 130);
   editableColumns = makeEditableColumns(data.columns);
+  editableDoors = makeEditableDoors(data.doors ?? [], data.doorSills ?? []);
+  bridgeWallSegmentsAtDoors();
+  editableWindows = makeEditableWindows(WINDOW_ITEMS);
+  editableFurniture = makeEditableFurniture(DESIGN_ITEMS);
+  refreshOpeningWallLinks();
+  workspace = loadWorkspace();
+  selectedSchemeId = ORIGINAL_SCHEME_ID;
+  renderSchemeOptions();
   refreshPlanStorageStatus();
   setupLights();
   buildScene();
@@ -242,21 +415,303 @@ async function init() {
   animate();
 }
 
-function getBounds(model) {
-  return {
-    x0: model.image.x0,
-    z0: model.image.z0,
-    x1: model.image.x1,
-    z1: model.image.z1,
+function calibrateModelToConstruction(model) {
+  const scaleX = CONSTRUCTION_PLAN.building.x1 / CONSTRUCTION_PLAN.sourceBuilding.width;
+  const scaleZ = CONSTRUCTION_PLAN.building.z1 / CONSTRUCTION_PLAN.sourceBuilding.depth;
+  const scaleRect = (item) => {
+    if (Number.isFinite(Number(item.x0))) item.x0 = Number(item.x0) * scaleX;
+    if (Number.isFinite(Number(item.x1))) item.x1 = Number(item.x1) * scaleX;
+    if (Number.isFinite(Number(item.z0))) item.z0 = Number(item.z0) * scaleZ;
+    if (Number.isFinite(Number(item.z1))) item.z1 = Number(item.z1) * scaleZ;
+    if (Number.isFinite(Number(item.x))) item.x = Number(item.x) * scaleX;
+    if (Number.isFinite(Number(item.z))) item.z = Number(item.z) * scaleZ;
+    return item;
   };
+  ["walls", "lowWalls", "columns", "doorSills", "fixtures", "furniture"].forEach((key) => {
+    (model[key] ?? []).forEach(scaleRect);
+  });
+  [...(model.walls ?? []), ...(model.lowWalls ?? [])].forEach((item) => {
+    if (item.x0 < 0) item.x0 = 0;
+    if (item.x1 < 0) item.x1 = 0;
+    if (item.z0 < 0) item.z0 = 0;
+    if (item.z1 < 0) item.z1 = 0;
+  });
+  const westExteriorWall = (model.walls ?? []).find((item) => item.source === "orange-poly-7419");
+  if (westExteriorWall) westExteriorWall.thicknessCm = 14;
+  (model.doors ?? []).forEach((door) => {
+    [door.hinge, door.endA, door.endB].filter(Boolean).forEach((point) => {
+      point.x *= scaleX;
+      point.z *= scaleZ;
+    });
+  });
+  DESIGN_ITEMS.forEach(scaleRect);
+  AREA_LABELS.forEach(scaleRect);
+  scaleRect(HUMAN_SCALE);
+  WINDOW_ITEMS.forEach((item) => {
+    const angle = ((item.rot ?? 0) * Math.PI) / 180;
+    const alongScale = Math.hypot(Math.cos(angle) * scaleX, Math.sin(angle) * scaleZ);
+    const normalScale = Math.hypot(Math.sin(angle) * scaleX, Math.cos(angle) * scaleZ);
+    scaleRect(item);
+    item.w *= alongScale;
+    item.d *= normalScale;
+    if (item.x < 0) item.x = 0;
+    if (item.z < 0) item.z = 0;
+  });
+
+  // Match the rendered exterior wall envelope to the construction drawing's 2755 x 1630 cm.
+  const eastExteriorWall = (model.walls ?? []).find((item) => item.source === "orange-poly-ring-6836:3");
+  const southExteriorWall = (model.walls ?? []).find((item) => item.source === "orange-6820");
+  const fitX0 = westExteriorWall
+    ? Number(westExteriorWall.x0) - Number(westExteriorWall.thicknessCm ?? 14) / 2
+    : 0;
+  const fitX1 = eastExteriorWall ? Math.max(Number(eastExteriorWall.x0), Number(eastExteriorWall.x1)) : CONSTRUCTION_PLAN.building.x1;
+  const fitZ0 = 0;
+  const fitZ1 = southExteriorWall ? Math.max(Number(southExteriorWall.z0), Number(southExteriorWall.z1)) : CONSTRUCTION_PLAN.building.z1;
+  const fitScaleX = CONSTRUCTION_PLAN.building.x1 / Math.max(fitX1 - fitX0, 1);
+  const fitScaleZ = CONSTRUCTION_PLAN.building.z1 / Math.max(fitZ1 - fitZ0, 1);
+  const fitRect = (item) => {
+    if (Number.isFinite(Number(item.x0))) item.x0 = (Number(item.x0) - fitX0) * fitScaleX;
+    if (Number.isFinite(Number(item.x1))) item.x1 = (Number(item.x1) - fitX0) * fitScaleX;
+    if (Number.isFinite(Number(item.z0))) item.z0 = (Number(item.z0) - fitZ0) * fitScaleZ;
+    if (Number.isFinite(Number(item.z1))) item.z1 = (Number(item.z1) - fitZ0) * fitScaleZ;
+    if (Number.isFinite(Number(item.x))) item.x = (Number(item.x) - fitX0) * fitScaleX;
+    if (Number.isFinite(Number(item.z))) item.z = (Number(item.z) - fitZ0) * fitScaleZ;
+    return item;
+  };
+  ["walls", "lowWalls", "columns", "doorSills", "fixtures", "furniture"].forEach((key) => {
+    (model[key] ?? []).forEach(fitRect);
+  });
+  if (westExteriorWall?.shape === "segment") westExteriorWall.thicknessCm *= fitScaleX;
+  (model.doors ?? []).forEach((door) => {
+    [door.hinge, door.endA, door.endB].filter(Boolean).forEach(fitRect);
+  });
+  DESIGN_ITEMS.forEach(fitRect);
+  AREA_LABELS.forEach(fitRect);
+  fitRect(HUMAN_SCALE);
+  WINDOW_ITEMS.forEach((item) => {
+    const angle = ((item.rot ?? 0) * Math.PI) / 180;
+    const alongScale = Math.hypot(Math.cos(angle) * fitScaleX, Math.sin(angle) * fitScaleZ);
+    const normalScale = Math.hypot(Math.sin(angle) * fitScaleX, Math.cos(angle) * fitScaleZ);
+    fitRect(item);
+    item.w *= alongScale;
+    item.d *= normalScale;
+  });
+
+  const siteGround = model.floorAreas?.find((area) => area.kind === "site-ground");
+  if (siteGround) Object.assign(siteGround, CONSTRUCTION_PLAN.siteBounds);
+  const raised = model.floorAreas?.find((area) => area.kind === "raised-office-floor");
+  if (raised) Object.assign(raised, { ...CONSTRUCTION_PLAN.building, heightCm: CONSTRUCTION_PLAN.levels.office });
+  model.steps = [
+    { kind: "entry-porch", shape: "rect", x0: 2150, z0: 1420, x1: 2755, z1: 1630, heightCm: CONSTRUCTION_PLAN.levels.porch, label: "+30" },
+    { kind: "entry-threshold", shape: "rect", x0: 2150, z0: 1385, x1: 2755, z1: 1420, heightCm: CONSTRUCTION_PLAN.levels.threshold, label: "+35" },
+  ];
+  model.levels = { ...(model.levels ?? {}), officeCm: CONSTRUCTION_PLAN.levels.office };
+}
+
+function getBounds(model) {
+  return { ...CONSTRUCTION_PLAN.siteBounds };
 }
 
 function makeEditableColumns(columns) {
-  nextColumnId = 1;
-  return columns.map((column) => ({
-    ...column,
-    __id: `column-${nextColumnId++}`,
-  }));
+  return makeEditableFootprints(columns, "column", DEFAULT_COLUMN_HEIGHT_CM);
+}
+
+function makeEditableFootprints(items, type, defaultHeightCm) {
+  const usedIds = new Set();
+  if (type === "column") nextColumnId = items.length + 1;
+  return items.map((item, index) => {
+    const preferredId = typeof item.id === "string" && item.id.length <= 120
+      ? item.id
+      : getModelObjectId(type, item, index);
+    let id = preferredId;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `${preferredId}-${suffix++}`;
+    usedIds.add(id);
+    const x0 = Number(item.x0);
+    const z0 = Number(item.z0);
+    const x1 = Number(item.x1);
+    const z1 = Number(item.z1);
+    const rawWidth = Math.abs(x1 - x0);
+    const rawDepth = Math.abs(z1 - z0);
+    const isSegment = item.shape === "segment";
+    const isHorizontal = rawWidth >= rawDepth;
+    return {
+      id,
+      __id: id,
+      type,
+      kind: type === "low-wall" ? "low-wall" : type,
+      x: (x0 + x1) / 2,
+      z: (z0 + z1) / 2,
+      w: isSegment ? Math.hypot(x1 - x0, z1 - z0) : Math.max(rawWidth, rawDepth),
+      d: isSegment ? Number(item.thicknessCm ?? 14) : Math.max(Math.min(rawWidth, rawDepth), type === "column" ? 10 : 4),
+      h: Number(item.h ?? item.heightCm ?? defaultHeightCm),
+      rot: isSegment ? (Math.atan2(z1 - z0, x1 - x0) * 180) / Math.PI : (isHorizontal ? 0 : 90),
+      source: typeof item.source === "string" ? item.source : `${type}-${index + 1}`,
+    };
+  });
+}
+
+function inferWallCategory(wall) {
+  if (wall.wallCategory === "exterior" || wall.wallCategory === "interior") return wall.wallCategory;
+  const axis = getWallAxis(wall);
+  const tolerance = Math.max(35, Number(wall.d ?? DEFAULT_WALL_THICKNESS_CM) * 2.5);
+  const isHorizontal = Math.abs(axis.x) >= 0.98;
+  const isVertical = Math.abs(axis.z) >= 0.98;
+  const onHorizontalBoundary = Math.abs(wall.z - CONSTRUCTION_PLAN.building.z0) <= tolerance
+    || Math.abs(wall.z - CONSTRUCTION_PLAN.building.z1) <= tolerance;
+  const onVerticalBoundary = Math.abs(wall.x - CONSTRUCTION_PLAN.building.x0) <= tolerance
+    || Math.abs(wall.x - CONSTRUCTION_PLAN.building.x1) <= tolerance;
+  return (isHorizontal && onHorizontalBoundary) || (isVertical && onVerticalBoundary) ? "exterior" : "interior";
+}
+
+function assignWallCategories(walls = editableWalls) {
+  walls.forEach((wall) => {
+    wall.wallCategory = inferWallCategory(wall);
+  });
+  return walls;
+}
+
+function applyWallCategoryHeights(walls = editableWalls) {
+  walls.forEach((wall) => {
+    wall.h = Math.round((wall.wallCategory === "exterior" ? currentExteriorWallHeight : currentWallHeight) * 100);
+  });
+}
+
+function normalizeAmbiguousToiletWallStubs(walls) {
+  const upperDoorStub = walls.find((wall) => wall.source === "orange-6805");
+  if (upperDoorStub) upperDoorStub.rot = 90;
+  const sideDoorStub = walls.find((wall) => wall.source === "orange-6809");
+  if (sideDoorStub) sideDoorStub.rot = 0;
+}
+
+function makeEditableDoors(doors, sills) {
+  return doors.map((door, index) => {
+    const sill = sills[index];
+    const fallbackRadius = Number(door.radiusCm ?? Math.hypot(door.endA.x - door.hinge.x, door.endA.z - door.hinge.z));
+    let metrics;
+    if (sill) {
+      const width = Math.abs(sill.x1 - sill.x0);
+      const depth = Math.abs(sill.z1 - sill.z0);
+      metrics = {
+        x: (sill.x0 + sill.x1) / 2,
+        z: (sill.z0 + sill.z1) / 2,
+        w: Math.max(width, depth),
+        d: Math.max(Math.min(width, depth), 5),
+        rot: width >= depth ? 0 : 90,
+      };
+    } else {
+      const dirX = door.endA.x - door.hinge.x;
+      const dirZ = door.endA.z - door.hinge.z;
+      const length = Math.hypot(dirX, dirZ) || fallbackRadius || 90;
+      metrics = {
+        x: door.hinge.x + (dirX / length) * length * 0.5,
+        z: door.hinge.z + (dirZ / length) * length * 0.5,
+        w: length,
+        d: 5,
+        rot: (Math.atan2(dirZ, dirX) * 180) / Math.PI,
+      };
+    }
+    const angle = (metrics.rot * Math.PI) / 180;
+    const axisX = Math.cos(angle);
+    const axisZ = Math.sin(angle);
+    const hingeProjection = (door.hinge.x - metrics.x) * axisX + (door.hinge.z - metrics.z) * axisZ;
+    const normalX = -axisZ;
+    const normalZ = axisX;
+    const openVector = [door.endA, door.endB]
+      .map((point) => ({ x: point.x - door.hinge.x, z: point.z - door.hinge.z }))
+      .sort((a, b) => Math.abs(b.x * normalX + b.z * normalZ) - Math.abs(a.x * normalX + a.z * normalZ))[0];
+    const hingeAtStart = hingeProjection <= 0;
+    const closedDirectionSign = hingeAtStart ? 1 : -1;
+    const closedVector = { x: axisX * closedDirectionSign, z: axisZ * closedDirectionSign };
+    const swingCross = closedVector.x * openVector.z - closedVector.z * openVector.x;
+    return {
+      id: getModelObjectId("door", door, index),
+      __id: getModelObjectId("door", door, index),
+      type: "door",
+      kind: "door",
+      ...metrics,
+      w: STANDARD_DOOR_WIDTH_CM,
+      d: STANDARD_DOOR_THICKNESS_CM,
+      h: STANDARD_DOOR_HEIGHT_CM,
+      hingeAtStart,
+      swingSign: swingCross >= 0 ? 1 : -1,
+      swingModelVersion: 2,
+      source: typeof door.source === "string" ? door.source : `door-${index + 1}`,
+    };
+  });
+}
+
+function makeEditableWindows(items) {
+  return items.map((item, index) => {
+    const id = getModelObjectId("window", item, index);
+    return {
+      id,
+      __id: id,
+      type: "window",
+      kind: "window",
+      x: Number(item.x),
+      z: Number(item.z),
+      w: Number(item.w ?? 240),
+      d: Number(item.d ?? 8),
+      h: Number(item.h ?? 110),
+      sillCm: Number(item.sillCm ?? 80),
+      rot: Number(item.rot ?? 0),
+      source: typeof item.source === "string" ? item.source : `window-${index + 1}`,
+    };
+  });
+}
+
+const FURNITURE_DEFAULTS = {
+  chair: { w: 46, d: 46, h: 92 },
+  lounge: { w: 66, d: 66, h: 92 },
+  plant: { w: 52, d: 52, h: 100 },
+  roundTable: { w: 120, d: 120, h: 76 },
+  workbench: { w: 180, d: 60, h: 90 },
+  desk: { w: 130, d: 70, h: 100 },
+  conferenceTable: { w: 460, d: 160, h: 100 },
+  reception: { w: 300, d: 80, h: 120 },
+  sofa: { w: 180, d: 80, h: 90 },
+  coffee: { w: 80, d: 50, h: 50 },
+  cabinet: { w: 120, d: 42, h: 150 },
+  shelf: { w: 150, d: 36, h: 180 },
+  counter: { w: 140, d: 44, h: 100 },
+  display: { w: 120, d: 36, h: 180 },
+  rug: { w: 160, d: 100, h: 5 },
+};
+
+function makeEditableFurniture(items) {
+  return items.map((item, index) => {
+    const furnitureType = item.furnitureType ?? item.type;
+    const defaults = FURNITURE_DEFAULTS[furnitureType] ?? { w: 80, d: 60, h: 100 };
+    const diameter = Number(item.r) * 2;
+    const id = typeof item.id === "string" ? item.id : `furniture-${furnitureType}-${index + 1}`;
+    return {
+      ...item,
+      id,
+      __id: id,
+      type: "furniture",
+      kind: "furniture",
+      furnitureType,
+      x: Math.round(Number(item.x)),
+      z: Math.round(Number(item.z)),
+      w: Math.round(Number(item.w ?? (Number.isFinite(diameter) ? diameter : defaults.w))),
+      d: Math.round(Number(item.d ?? (Number.isFinite(diameter) ? diameter : defaults.d))),
+      h: Math.round(Number(item.h ?? defaults.h)),
+      rot: normalizeAngle(Math.round(Number(item.rot ?? item.rotation ?? 0))),
+      source: typeof item.source === "string" ? item.source : `${furnitureType}-${index + 1}`,
+    };
+  });
+}
+
+function getModelObjectId(prefix, item, index) {
+  const source = typeof item?.source === "string" ? item.source : `${index + 1}`;
+  const safeSource = source.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || `${index + 1}`;
+  return `${prefix}-${safeSource}`;
+}
+
+function createObjectId(prefix) {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `${prefix}-user-${Date.now().toString(36)}-${random}`;
 }
 
 function setWallHeightPanelOpen(open) {
@@ -281,10 +736,12 @@ function setPlanStoragePanelOpen(open) {
 }
 
 function updateWallHeightLabel() {
-  const label = `${currentWallHeight.toFixed(2)}m`;
-  if (wallHeightValue) wallHeightValue.textContent = label;
-  toggleWallHeightButton?.setAttribute("title", `牆高 ${label}`);
-  toggleWallHeightButton?.setAttribute("aria-label", `牆高 ${label}`);
+  const interiorLabel = `${currentWallHeight.toFixed(2)}m`;
+  const exteriorLabel = `${currentExteriorWallHeight.toFixed(2)}m`;
+  if (wallHeightValue) wallHeightValue.textContent = interiorLabel;
+  if (exteriorWallHeightValue) exteriorWallHeightValue.textContent = exteriorLabel;
+  toggleWallHeightButton?.setAttribute("title", `外牆 ${exteriorLabel}／隔間 ${interiorLabel}`);
+  toggleWallHeightButton?.setAttribute("aria-label", `外牆 ${exteriorLabel}／隔間 ${interiorLabel}`);
 }
 
 function setColumnEditorCollapsed(collapsed) {
@@ -292,21 +749,22 @@ function setColumnEditorCollapsed(collapsed) {
   columnEditor?.classList.toggle("is-collapsed", collapsed);
   if (columnEditorBody) columnEditorBody.hidden = collapsed;
   collapseColumnEditorButton?.setAttribute("aria-expanded", String(!collapsed));
-  collapseColumnEditorButton?.setAttribute("aria-label", collapsed ? "展開柱子編輯" : "收合柱子編輯");
-  collapseColumnEditorButton?.setAttribute("title", collapsed ? "展開柱子編輯" : "收合柱子編輯");
+  collapseColumnEditorButton?.setAttribute("aria-label", collapsed ? "展開物件編輯" : "收合物件編輯");
+  collapseColumnEditorButton?.setAttribute("title", collapsed ? "展開物件編輯" : "收合物件編輯");
 }
 
 function setColumnEditorOpen(open) {
   columnEditorOpen = open;
   columnEditor.hidden = !open;
   toggleColumnEditorButton?.classList.toggle("is-active", open);
+  toggleColumnEditorButton?.setAttribute("aria-expanded", String(open));
   if (open) {
-    ensureSelectedColumn();
     setColumnEditorCollapsed(false);
     setWallHeightPanelOpen(false);
     setPlanStoragePanelOpen(false);
   } else {
     selectedColumnId = null;
+    selectedObject = null;
   }
   syncColumnEditor();
   rebuildWalls();
@@ -318,16 +776,32 @@ function bindControls() {
   toggleWallHeightButton?.addEventListener("click", () => setWallHeightPanelOpen(!wallHeightPanelOpen));
   togglePlanStorageButton?.addEventListener("click", () => setPlanStoragePanelOpen(!planStoragePanelOpen));
   closePlanStorageButton?.addEventListener("click", () => setPlanStoragePanelOpen(false));
+  schemeSelect?.addEventListener("change", () => {
+    selectedSchemeId = schemeSelect.value;
+    refreshPlanStorageStatus();
+  });
+  newSchemeButton?.addEventListener("click", createScheme);
+  renameSchemeButton?.addEventListener("click", renameSelectedScheme);
+  deleteSchemeButton?.addEventListener("click", deleteSelectedScheme);
+  undoEditButton?.addEventListener("click", undoEdit);
+  redoEditButton?.addEventListener("click", redoEdit);
   toggleCadViewButton?.addEventListener("click", () => {
     cadMode = !cadMode;
     applyCadMode();
+  });
+  toggleDoorOpenButton?.addEventListener("click", () => {
+    doorsOpen = !doorsOpen;
+    toggleDoorOpenButton.classList.toggle("is-active", doorsOpen);
+    toggleDoorOpenButton.setAttribute("title", doorsOpen ? "將門片關閉展示" : "將門片開啟展示");
+    toggleDoorOpenButton.setAttribute("aria-label", doorsOpen ? "將門片關閉展示" : "將門片開啟展示");
+    rebuildWalls();
   });
   toggleFurnitureButton?.addEventListener("click", () => {
     furnitureVisible = !furnitureVisible;
     furnitureGroup.visible = furnitureVisible && !cadMode;
     toggleFurnitureButton.classList.toggle("is-active", furnitureVisible);
     toggleFurnitureButton.setAttribute("aria-label", furnitureVisible ? "隱藏家具" : "顯示家具");
-    if (cadMode) rebuildCadPlan();
+    rebuildWalls();
     updateStatus();
   });
   toggleColumnEditorButton?.addEventListener("click", () => setColumnEditorOpen(!columnEditorOpen));
@@ -347,25 +821,60 @@ function bindControls() {
   });
   wallHeightInput.addEventListener("input", () => {
     currentWallHeight = Number(wallHeightInput.value);
+    const heightCm = Math.round(currentWallHeight * 100);
+    editableWalls.filter((wall) => wall.wallCategory !== "exterior").forEach((wall) => {
+      wall.h = heightCm;
+    });
     updateWallHeightLabel();
     rebuildWalls();
   });
-  document.querySelector("#addColumn")?.addEventListener("click", addColumnAtViewTarget);
-  document.querySelector("#deleteColumn")?.addEventListener("click", deleteSelectedColumn);
-  document.querySelector("#resetColumns")?.addEventListener("click", resetEditableColumns);
-  document.querySelector("#saveDraft")?.addEventListener("click", saveDraft);
+  exteriorWallHeightInput.addEventListener("input", () => {
+    currentExteriorWallHeight = Number(exteriorWallHeightInput.value);
+    const heightCm = Math.round(currentExteriorWallHeight * 100);
+    editableWalls.filter((wall) => wall.wallCategory === "exterior").forEach((wall) => {
+      wall.h = heightCm;
+    });
+    updateWallHeightLabel();
+    rebuildWalls();
+  });
+  ["pointerdown", "focus"].forEach((eventName) => {
+    wallHeightInput.addEventListener(eventName, () => beginHistoryAction("調整牆高"));
+    exteriorWallHeightInput.addEventListener(eventName, () => beginHistoryAction("調整外牆高度"));
+  });
+  ["change", "blur"].forEach((eventName) => {
+    wallHeightInput.addEventListener(eventName, commitHistoryAction);
+    exteriorWallHeightInput.addEventListener(eventName, commitHistoryAction);
+  });
+  addObjectButton?.addEventListener("click", () => {
+    const type = addObjectTypeSelect?.value ?? "wall";
+    performHistoryAction(`新增${type}`, () => addEditableObjectAtViewTarget(type));
+  });
+  deleteObjectButton?.addEventListener("click", () => performHistoryAction("刪除物件", deleteSelectedEditableObject));
+  splitWallButton?.addEventListener("click", () => performHistoryAction("分割牆面", splitSelectedWall));
+  flipDoorButton?.addEventListener("click", () => performHistoryAction("翻轉門片方向", flipSelectedDoor));
+  document.querySelector("#resetColumns")?.addEventListener("click", () => performHistoryAction("重設柱子", resetEditableColumns));
+  saveDraftButton?.addEventListener("click", saveDraft);
   loadDraftButton?.addEventListener("click", loadDraft);
   document.querySelector("#exportPlan")?.addEventListener("click", exportPlan);
   document.querySelector("#importPlan")?.addEventListener("click", () => importPlanFile?.click());
   document.querySelector("#restoreOriginal")?.addEventListener("click", restoreOriginalPlan);
   importPlanFile?.addEventListener("change", importPlanFromFile);
-  Object.values(columnInputs).forEach((input) => {
-    input?.addEventListener("input", updateSelectedColumnFromFields);
+  objectEditorInputs.forEach((input) => {
+    input?.addEventListener("input", updateSelectedObjectFromFields);
+    ["pointerdown", "focus"].forEach((eventName) => {
+      input?.addEventListener(eventName, () => {
+        const typeLabel = selectedObject ? objectDescriptors.get(selectedObject.id)?.typeLabel : "物件";
+        beginHistoryAction(`調整${typeLabel ?? "物件"}尺寸`);
+      });
+    });
+    ["change", "blur"].forEach((eventName) => {
+      input?.addEventListener(eventName, commitHistoryAction);
+    });
   });
-  canvas.addEventListener("pointerdown", startColumnDrag);
-  canvas.addEventListener("pointermove", dragSelectedColumn);
-  canvas.addEventListener("pointerup", endColumnDrag);
-  canvas.addEventListener("pointercancel", endColumnDrag);
+  canvas.addEventListener("pointerdown", startObjectInteraction);
+  canvas.addEventListener("pointermove", dragSelectedObject);
+  canvas.addEventListener("pointerup", endObjectDrag);
+  canvas.addEventListener("pointercancel", endObjectDrag);
   window.addEventListener("resize", resize);
 }
 
@@ -389,8 +898,8 @@ function setupLights() {
 
 function buildScene() {
   addBaseFloor();
+  rebuildFurniture();
   rebuildWalls();
-  addFurniture();
   addFixtures();
   addLabels();
   updateStatus();
@@ -405,6 +914,7 @@ function addBaseFloor() {
   siteGround.receiveShadow = true;
   floorGroup.add(siteGround);
   baseFloor = siteGround;
+  addConstructionSite();
 
   const raised = data.floorAreas?.find((area) => area.kind === "raised-office-floor");
   if (raised) {
@@ -419,6 +929,65 @@ function addBaseFloor() {
   planMesh = null;
 
   addSubtleFloorPlanks(raised ?? { x0: bounds.x0, z0: bounds.z0, x1: bounds.x1, z1: bounds.z1 });
+}
+
+function addConstructionSite() {
+  const { roadEdgeX, roadEdgeZ, eastParking, southParking, levels } = CONSTRUCTION_PLAN;
+  addPlatform({ x0: bounds.x0, z0: roadEdgeZ, x1: bounds.x1, z1: bounds.z1, heightCm: levels.southRoad }, materials.road, floorGroup);
+  addPlatform({ x0: roadEdgeX, z0: bounds.z0, x1: bounds.x1, z1: bounds.z1, heightCm: levels.southRoad }, materials.road, floorGroup);
+  addPlatform({ x0: eastParking.x0, z0: eastParking.z0, x1: roadEdgeX, z1: 1120, heightCm: levels.eastParking }, materials.parking, floorGroup);
+  addPlatform({ x0: 2180, z0: 1040, x1: roadEdgeX, z1: roadEdgeZ, heightCm: levels.eastParking }, materials.parking, floorGroup);
+  addPlatform({ x0: -30, z0: CONSTRUCTION_PLAN.building.z1, x1: 2200, z1: roadEdgeZ, heightCm: levels.southRoad }, materials.parking, floorGroup);
+
+  const eastBays = Array.from({ length: eastParking.count }, (_, index) => ({
+    x: eastParking.x0 + eastParking.stallDepth / 2,
+    z: eastParking.z0 + eastParking.stallWidth * (index + 0.5),
+    w: eastParking.stallDepth,
+    d: eastParking.stallWidth,
+    rot: 0,
+    levelCm: levels.eastParking,
+  }));
+  eastBays.forEach(addParkingBay3D);
+
+  const southBays = Array.from({ length: southParking.count }, (_, index) => ({
+    x: southParking.startX + southParking.spacing * index,
+    z: southParking.centerZ,
+    w: southParking.stallDepth,
+    d: southParking.stallWidth,
+    rot: southParking.angle,
+    levelCm: levels.southRoad,
+  }));
+  southBays.forEach((bay) => {
+    addParkingBay3D(bay);
+  });
+
+  addSiteCurb(roadEdgeX, (bounds.z0 + roadEdgeZ) / 2, 10, roadEdgeZ - bounds.z0, 0, levels.southRoad);
+  addSiteCurb((bounds.x0 + roadEdgeX) / 2, roadEdgeZ, roadEdgeX - bounds.x0, 10, 0, levels.southRoad);
+}
+
+function addParkingBay3D(item) {
+  const position = toWorld(item.x, item.z);
+  const group = new THREE.Group();
+  const width = item.w / 100;
+  const depth = item.d / 100;
+  const line = 0.045;
+  const y = item.levelCm / 100 + 0.014;
+  addBoxToGroup(group, width, 0.024, line, materials.marking, 0, y, -depth / 2);
+  addBoxToGroup(group, width, 0.024, line, materials.marking, 0, y, depth / 2);
+  addBoxToGroup(group, line, 0.024, depth, materials.marking, -width / 2, y, 0);
+  addBoxToGroup(group, line, 0.024, depth, materials.marking, width / 2, y, 0);
+  group.position.set(position.x, 0, position.z);
+  group.rotation.y = -((item.rot ?? 0) * Math.PI) / 180;
+  floorGroup.add(group);
+}
+
+function addSiteCurb(x, z, widthCm, depthCm, rot, levelCm) {
+  const position = toWorld(x, z);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(widthCm / 100, 0.04), 0.16, Math.max(depthCm / 100, 0.04)), materials.curb);
+  mesh.position.set(position.x, levelCm / 100 + 0.08, position.z);
+  mesh.rotation.y = -((rot ?? 0) * Math.PI) / 180;
+  mesh.receiveShadow = true;
+  floorGroup.add(mesh);
 }
 
 function addPlatform(area, material, group) {
@@ -474,146 +1043,649 @@ function addSubtleFloorPlanks(area) {
 
 function rebuildWalls() {
   clearGroup(wallGroup);
+  clearGroup(interactionGroup);
   columnMeshes = [];
   columnPickMeshes = [];
-  const openings = getDoorOpenings();
-  for (const item of data.walls) {
-    for (const segment of splitWallByOpenings(item, openings)) {
-      addFootprint(segment, currentWallHeight, materials.wall, wallGroup);
-    }
-  }
-  for (const item of data.lowWalls) {
-    addFootprint(item, data.defaults.lowWallHeightCm / 100, materials.lowWall, wallGroup);
-  }
-  for (const item of editableColumns) {
-    const material = columnEditorOpen && item.__id === selectedColumnId ? materials.selectedColumn : materials.column;
-    const mesh = addFootprint(item, data.defaults.columnHeightCm / 100, material, wallGroup);
+  objectPickMeshes = [];
+  objectDescriptors = new Map();
+  refreshOpeningWallLinks();
+  editableWalls.forEach((item, index) => {
+    const category = inferWallCategory(item);
+    item.wallCategory = category;
+    item.__renderIndex = index;
+    addEditableWall(item, getWallOpenings(item), getStableWallMaterial(category, index));
+    const wallLabel = category === "exterior" ? "外牆" : "隔間牆";
+    registerEditableObject(item, index, wallLabel, { x: "X cm", z: "Z cm", w: "長 cm", d: "厚 cm" }, 1);
+  });
+  editableLowWalls.forEach((item, index) => {
+    addEditableWall(item, [], materials.lowWall);
+    registerEditableObject(item, index, "矮牆", { x: "X cm", z: "Z cm", w: "長 cm", d: "厚 cm" }, 2);
+  });
+  editableColumns.forEach((item, index) => {
+    const material = columnEditorOpen && item.id === selectedObject?.id ? materials.selectedColumn : materials.column;
+    const mesh = addEditableSolid(item, material);
     mesh.userData.columnId = item.__id;
     mesh.userData.isEditableColumn = true;
     columnMeshes.push(mesh);
-    columnPickMeshes.push(addColumnDragHitbox(item));
-  }
-  for (const item of data.doorSills ?? []) {
-    addFootprint(item, 0.035, materials.sill, wallGroup, { baseY: officeElevation + 0.01, cap: false });
-  }
-  for (const item of data.doors ?? []) {
+    registerEditableObject(item, index, "柱子", { x: "X cm", z: "Z cm", w: "寬 cm", d: "深 cm" }, 3);
+  });
+  editableDoors.forEach((item, index) => {
     addDoor(item, wallGroup);
+    addEditableDoorSill(item);
+    registerEditableObject(item, index, "門", { x: "X cm", z: "Z cm", w: "門寬 cm", d: "厚 cm" }, 5, findWallReferenceById(item.wallId));
+  });
+  editableWindows.forEach((item, index) => {
+    addWindow(item, wallGroup);
+    registerEditableObject(item, index, "窗戶", { x: "X cm", z: "Z cm", w: "窗寬 cm", d: "厚 cm" }, 6, findWallReferenceById(item.wallId), officeElevation + item.sillCm / 100);
+  });
+  if (furnitureVisible) {
+    editableFurniture.forEach((item, index) => {
+      const label = getFurnitureTypeLabel(item.furnitureType);
+      registerEditableObject(item, index, label, { x: "X cm", z: "Z cm", w: "寬 cm", d: "深 cm" }, 4, null, officeElevation);
+    });
   }
-  addWindows(wallGroup);
+  addSelectedObjectOutline();
+  addSelectedWallEndpointHandles();
   rebuildCadPlan();
   updateStatus();
+  if (columnEditorOpen) syncColumnEditor();
 }
 
-function addColumnDragHitbox(item) {
-  const metrics = getColumnMetrics(item);
-  const pickPaddingCm = 36;
-  const pickHeight = Math.max(data.defaults.columnHeightCm / 100, 2.6);
-  const width = Math.max((metrics.w + pickPaddingCm) / 100, 0.8);
-  const depth = Math.max((metrics.d + pickPaddingCm) / 100, 0.8);
-  const pos = toWorld(metrics.x, metrics.z);
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, pickHeight, depth), materials.columnPick);
-  mesh.position.set(pos.x, officeElevation + pickHeight / 2, pos.z);
-  mesh.userData.columnId = item.__id;
-  mesh.userData.isEditableColumn = true;
+function registerEditableObject(item, index, typeLabel, fieldLabels, priority, linkedWall = null, baseY = officeElevation) {
+  const descriptor = {
+    id: item.id,
+    type: item.type,
+    typeLabel,
+    sourceLabel: item.source || `${typeLabel} ${index + 1}`,
+    item,
+    metrics: getEditableMetrics(item),
+    fieldLabels,
+    linkedWall,
+    editable: true,
+    index,
+  };
+  const pickMetrics = { ...descriptor.metrics, d: Math.max(descriptor.metrics.d, item.type === "column" ? 36 : 18) };
+  const pickMesh = addOrientedObjectHitbox(pickMetrics, descriptor, priority, baseY);
+  if (item.type === "column") columnPickMeshes.push(pickMesh);
+  registerSelectableObject(descriptor, pickMesh, priority);
+}
+
+function getEditableMetrics(item) {
+  return { x: item.x, z: item.z, w: item.w, d: item.d, h: item.h, rot: item.rot ?? 0, sillCm: item.sillCm };
+}
+
+function getEditableCollection(type) {
+  if (type === "wall") return editableWalls;
+  if (type === "low-wall") return editableLowWalls;
+  if (type === "column") return editableColumns;
+  if (type === "door") return editableDoors;
+  if (type === "window") return editableWindows;
+  if (type === "furniture") return editableFurniture;
+  return [];
+}
+
+function getEditableObjectById(id, type = null) {
+  if (type) return getEditableCollection(type).find((item) => item.id === id) ?? null;
+  return [editableWalls, editableLowWalls, editableColumns, editableDoors, editableWindows, editableFurniture]
+    .flat()
+    .find((item) => item.id === id) ?? null;
+}
+
+function getSelectedEditableObject() {
+  return selectedObject ? getEditableObjectById(selectedObject.id, selectedObject.type) : null;
+}
+
+function setEditableMetrics(item, metrics) {
+  const minimumWidth = item.type === "door" || item.type === "window" ? 40 : 10;
+  const minimumDepth = item.type === "column" ? 10 : 3;
+  const minimumHeight = item.type === "door" ? 150 : item.type === "window" ? 30 : 10;
+  const previousWall = item.type === "wall" ? { x: item.x, z: item.z, rot: item.rot ?? 0 } : null;
+  const attachedOpenings = previousWall
+    ? [...editableDoors, ...editableWindows]
+      .filter((opening) => opening.wallId === item.id)
+      .map((opening) => ({ opening, along: getOpeningAlongWall(opening, previousWall) }))
+    : [];
+  item.x = Math.round(Number.isFinite(Number(metrics.x)) ? Number(metrics.x) : item.x);
+  item.z = Math.round(Number.isFinite(Number(metrics.z)) ? Number(metrics.z) : item.z);
+  item.w = Math.round(Math.max(Number(metrics.w) || item.w, minimumWidth));
+  item.d = Math.round(Math.max(Number(metrics.d) || item.d, minimumDepth));
+  const maximumHeight = item.type === "column" ? 1000 : item.type === "wall" ? 600 : 500;
+  item.h = Math.round(Math.min(maximumHeight, Math.max(Number(metrics.h) || item.h, minimumHeight)));
+  item.rot = normalizeAngle(Math.round(Number.isFinite(Number(metrics.rot)) ? Number(metrics.rot) : item.rot ?? 0));
+  if (item.type === "window" && Number.isFinite(Number(metrics.sillCm))) item.sillCm = Math.max(0, Math.round(Number(metrics.sillCm)));
+  if (item.type === "door" || item.type === "window") updateOpeningWallLink(item);
+  if (item.type === "wall") {
+    const axis = getWallAxis(item);
+    attachedOpenings.forEach(({ opening, along }) => {
+      opening.x = item.x + axis.x * along;
+      opening.z = item.z + axis.z * along;
+      snapOpeningToWall(opening, item);
+    });
+    refreshOpeningWallLinks();
+  }
+}
+
+function getOpeningAlongWall(opening, wall) {
+  const axis = getWallAxis(wall);
+  return (opening.x - wall.x) * axis.x + (opening.z - wall.z) * axis.z;
+}
+
+function getFurnitureTypeLabel(type) {
+  const labels = {
+    workbench: "工作桌",
+    desk: "辦公桌",
+    chair: "椅子",
+    roundTable: "圓桌",
+    lounge: "休閒椅",
+    plant: "植栽",
+    conferenceTable: "會議桌",
+    reception: "櫃檯",
+    sofa: "沙發",
+    coffee: "茶几",
+    cabinet: "櫃體",
+    shelf: "層架",
+    counter: "吧檯",
+    display: "展示架",
+    rug: "地毯",
+  };
+  return labels[type] ?? "家具";
+}
+
+function normalizeAngle(value) {
+  let angle = Number(value) || 0;
+  while (angle > 180) angle -= 360;
+  while (angle <= -180) angle += 360;
+  return angle;
+}
+
+function getWallEndpoints(wall) {
+  const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const halfX = Math.cos(angle) * wall.w * 0.5;
+  const halfZ = Math.sin(angle) * wall.w * 0.5;
+  return {
+    start: { x: wall.x - halfX, z: wall.z - halfZ },
+    end: { x: wall.x + halfX, z: wall.z + halfZ },
+  };
+}
+
+function setWallFromEndpoints(wall, start, end) {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const length = Math.max(10, Math.hypot(dx, dz));
+  if (length <= 10 && Math.hypot(dx, dz) < 1) return;
+  wall.x = Math.round((start.x + end.x) / 2);
+  wall.z = Math.round((start.z + end.z) / 2);
+  wall.w = Math.round(length);
+  wall.rot = normalizeAngle(Math.round((Math.atan2(dz, dx) * 180) / Math.PI));
+}
+
+function getWallAxis(wall) {
+  const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  return { x: Math.cos(angle), z: Math.sin(angle) };
+}
+
+function areWallsCollinear(a, b, toleranceCm = 8) {
+  const axisA = getWallAxis(a);
+  const axisB = getWallAxis(b);
+  if (Math.abs(axisA.x * axisB.x + axisA.z * axisB.z) < 0.998) return false;
+  const normal = { x: -axisA.z, z: axisA.x };
+  return Math.abs((b.x - a.x) * normal.x + (b.z - a.z) * normal.z) <= toleranceCm;
+}
+
+function getWallIntervalOnAxis(wall, axis) {
+  const endpoints = getWallEndpoints(wall);
+  const values = [endpoints.start, endpoints.end].map((point) => point.x * axis.x + point.z * axis.z);
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+function getIntervalGap(a, b) {
+  if (a.max < b.min) return b.min - a.max;
+  if (b.max < a.min) return a.min - b.max;
+  return 0;
+}
+
+function mergeWallPair(target, source, walls = editableWalls, doors = editableDoors, windows = editableWindows) {
+  if (!target || !source || target.id === source.id) return target;
+  if (inferWallCategory(target) !== inferWallCategory(source)) return target;
+  const axis = getWallAxis(target);
+  const normal = { x: -axis.z, z: axis.x };
+  const targetInterval = getWallIntervalOnAxis(target, axis);
+  const sourceInterval = getWallIntervalOnAxis(source, axis);
+  const min = Math.min(targetInterval.min, sourceInterval.min);
+  const max = Math.max(targetInterval.max, sourceInterval.max);
+  const normalOffset = target.x * normal.x + target.z * normal.z;
+  const middle = (min + max) / 2;
+  target.x = Math.round(axis.x * middle + normal.x * normalOffset);
+  target.z = Math.round(axis.z * middle + normal.z * normalOffset);
+  target.w = Math.round(max - min);
+  [...doors, ...windows].forEach((opening) => {
+    if (opening.wallId === source.id) opening.wallId = target.id;
+  });
+  const sourceIndex = walls.findIndex((wall) => wall.id === source.id);
+  if (sourceIndex >= 0) walls.splice(sourceIndex, 1);
+  if (walls === editableWalls && selectedObject?.id === source.id) selectedObject = { id: target.id, type: "wall" };
+  return target;
+}
+
+function mergeTouchingCollinearWalls(maxGapCm = WALL_ENDPOINT_SNAP_CM, walls = editableWalls, doors = editableDoors, windows = editableWindows) {
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < walls.length && !merged; i += 1) {
+      for (let j = i + 1; j < walls.length; j += 1) {
+        const first = walls[i];
+        const second = walls[j];
+        if (inferWallCategory(first) !== inferWallCategory(second)) continue;
+        if (Math.abs(first.d - second.d) > 1 || Math.abs(first.h - second.h) > 1) continue;
+        if (!areWallsCollinear(first, second, Math.max(6, (first.d + second.d) / 2))) continue;
+        const axis = getWallAxis(first);
+        const gap = getIntervalGap(getWallIntervalOnAxis(first, axis), getWallIntervalOnAxis(second, axis));
+        if (gap > maxGapCm) continue;
+        mergeWallPair(first, second, walls, doors, windows);
+        merged = true;
+        break;
+      }
+    }
+  }
+}
+
+function bridgeWallSegmentsAtDoors(walls = editableWalls, doors = editableDoors, windows = editableWindows) {
+  for (const door of doors) {
+    const axis = getWallAxis(door);
+    const normal = { x: -axis.z, z: axis.x };
+    const doorCenter = door.x * axis.x + door.z * axis.z;
+    const candidates = walls
+      .filter((wall) => {
+        const wallAxis = getWallAxis(wall);
+        const parallel = Math.abs(axis.x * wallAxis.x + axis.z * wallAxis.z) >= 0.998;
+        const normalDistance = Math.abs((wall.x - door.x) * normal.x + (wall.z - door.z) * normal.z);
+        return parallel && normalDistance <= Math.max(18, wall.d);
+      })
+      .map((wall) => ({ wall, interval: getWallIntervalOnAxis(wall, axis) }));
+    if (candidates.some(({ interval }) => interval.min <= doorCenter - door.w / 2 && interval.max >= doorCenter + door.w / 2)) continue;
+    const left = candidates
+      .filter(({ interval }) => interval.max <= doorCenter + 8)
+      .sort((a, b) => b.interval.max - a.interval.max)[0];
+    const right = candidates
+      .filter(({ interval }) => interval.min >= doorCenter - 8)
+      .sort((a, b) => a.interval.min - b.interval.min)[0];
+    if (!left || !right || left.wall.id === right.wall.id) continue;
+    if (right.interval.min - left.interval.max > door.w + 70) continue;
+    mergeWallPair(left.wall, right.wall, walls, doors, windows);
+  }
+  mergeTouchingCollinearWalls(3, walls, doors, windows);
+}
+
+function snapWallEndpoint(point, wallId) {
+  let nearest = null;
+  editableWalls.forEach((wall) => {
+    if (wall.id === wallId) return;
+    const endpoints = getWallEndpoints(wall);
+    const dx = endpoints.end.x - endpoints.start.x;
+    const dz = endpoints.end.z - endpoints.start.z;
+    const lengthSquared = dx * dx + dz * dz;
+    const t = lengthSquared
+      ? Math.max(0, Math.min(1, ((point.x - endpoints.start.x) * dx + (point.z - endpoints.start.z) * dz) / lengthSquared))
+      : 0;
+    const candidates = [
+      endpoints.start,
+      endpoints.end,
+      { x: endpoints.start.x + dx * t, z: endpoints.start.z + dz * t },
+    ];
+    candidates.forEach((endpoint) => {
+      const distance = Math.hypot(endpoint.x - point.x, endpoint.z - point.z);
+      if (distance <= WALL_ENDPOINT_SNAP_CM && (!nearest || distance < nearest.distance)) nearest = { ...endpoint, distance };
+    });
+  });
+  return nearest ? { x: nearest.x, z: nearest.z } : point;
+}
+
+function findNearestWallReference(x, z, minimumWidth = 0, walls = editableWalls) {
+  let nearest = null;
+  walls.forEach((wall, index) => {
+    if (wall.w + 0.5 < minimumWidth) return;
+    const distance = distanceToWallCenterline(x, z, wall);
+    if (!nearest || distance < nearest.distance) {
+      nearest = {
+        id: wall.id,
+        label: wall.source || `牆面 ${index + 1}`,
+        distance,
+        item: wall,
+      };
+    }
+  });
+  return nearest;
+}
+
+function distanceToWallCenterline(x, z, wall) {
+  const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const halfX = Math.cos(angle) * wall.w * 0.5;
+  const halfZ = Math.sin(angle) * wall.w * 0.5;
+  return distancePointToSegment(x, z, wall.x - halfX, wall.z - halfZ, wall.x + halfX, wall.z + halfZ);
+}
+
+function distancePointToSegment(px, pz, x0, z0, x1, z1) {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const lengthSquared = dx * dx + dz * dz;
+  if (!lengthSquared) return Math.hypot(px - x0, pz - z0);
+  const t = Math.max(0, Math.min(1, ((px - x0) * dx + (pz - z0) * dz) / lengthSquared));
+  return Math.hypot(px - (x0 + dx * t), pz - (z0 + dz * t));
+}
+
+function addOrientedObjectHitbox(metrics, descriptor, priority, baseY) {
+  const width = Math.max(metrics.w / 100, 0.08);
+  const depth = Math.max(metrics.d / 100, 0.08);
+  const height = Math.max(metrics.h / 100, 0.08);
+  const position = toWorld(metrics.x, metrics.z);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), materials.objectPick);
+  mesh.position.set(position.x, baseY + height / 2, position.z);
+  mesh.rotation.y = -((metrics.rot ?? 0) * Math.PI) / 180;
+  mesh.userData.objectId = descriptor.id;
+  mesh.userData.objectType = descriptor.type;
+  mesh.userData.pickPriority = priority;
   mesh.renderOrder = -1;
-  wallGroup.add(mesh);
+  interactionGroup.add(mesh);
   return mesh;
 }
 
-function getDoorOpenings() {
-  return (data.doorSills ?? []).map((sill) => {
-    const x0 = Math.min(sill.x0, sill.x1);
-    const x1 = Math.max(sill.x0, sill.x1);
-    const z0 = Math.min(sill.z0, sill.z1);
-    const z1 = Math.max(sill.z0, sill.z1);
-    const width = x1 - x0;
-    const depth = z1 - z0;
-    const padding = 10;
-    return {
-      orientation: width >= depth ? "horizontal" : "vertical",
-      x0: x0 - padding,
-      x1: x1 + padding,
-      z0: z0 - padding,
-      z1: z1 + padding,
-      cx: (x0 + x1) / 2,
-      cz: (z0 + z1) / 2,
-    };
-  });
+function findWallReferenceById(id, walls = editableWalls) {
+  if (!id) return null;
+  const index = walls.findIndex((wall) => wall.id === id);
+  const wall = walls[index];
+  return wall ? { id: wall.id, label: wall.source || `牆面 ${index + 1}`, distance: 0, item: wall } : null;
 }
 
-function splitWallByOpenings(item, openings) {
-  if (item.shape !== "rect") {
-    if ((item.thicknessCm ?? 0) > 80) return [];
-    return [item];
-  }
+function snapOpeningToWall(item, wall) {
+  const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const axisX = Math.cos(angle);
+  const axisZ = Math.sin(angle);
+  const rawAlong = (item.x - wall.x) * axisX + (item.z - wall.z) * axisZ;
+  const maximumAlong = Math.max(0, (wall.w - item.w) / 2);
+  const along = Math.max(-maximumAlong, Math.min(maximumAlong, rawAlong));
+  item.x = Math.round(wall.x + axisX * along);
+  item.z = Math.round(wall.z + axisZ * along);
+  item.rot = normalizeAngle(Math.round(wall.rot ?? 0));
+  item.wallId = wall.id;
+}
 
-  let segments = [{ ...item }];
+function clampWindowVertical(item, wall) {
+  if (item.type !== "window" || !wall) return;
+  const wallHeight = Math.max(30, Number(wall.h ?? 200));
+  item.h = Math.min(item.h, wallHeight);
+  item.sillCm = Math.max(0, Math.min(Math.round(item.sillCm ?? 80), Math.max(0, wallHeight - item.h)));
+}
+
+function updateOpeningWallLink(item, { preferLinkedWall = false, walls = editableWalls } = {}) {
+  const linkedWall = preferLinkedWall ? findWallReferenceById(item.wallId, walls) : null;
+  const linkedWallFits = linkedWall?.item?.w + 0.5 >= item.w ? linkedWall : null;
+  const wallReference = linkedWallFits
+    ?? findNearestWallReference(item.x, item.z, item.w, walls)
+    ?? findNearestWallReference(item.x, item.z, 40, walls);
+  if (!wallReference?.item) {
+    item.wallId = null;
+    return;
+  }
+  if (item.w > wallReference.item.w) item.w = Math.max(40, Math.round(wallReference.item.w));
+  snapOpeningToWall(item, wallReference.item);
+  clampWindowVertical(item, wallReference.item);
+}
+
+function refreshOpeningWallLinks(walls = editableWalls, doors = editableDoors, windows = editableWindows) {
+  [...doors, ...windows].forEach((item) => updateOpeningWallLink(item, { preferLinkedWall: true, walls }));
+}
+
+function getWallOpenings(wall) {
+  const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const axisX = Math.cos(angle);
+  const axisZ = Math.sin(angle);
+  return [...editableDoors, ...editableWindows]
+    .filter((item) => item.wallId === wall.id)
+    .map((item) => {
+      const along = (item.x - wall.x) * axisX + (item.z - wall.z) * axisZ;
+      const clearance = item.type === "window" ? 1.5 : 0.5;
+      return {
+        id: item.id,
+        start: along - item.w / 2 - clearance,
+        end: along + item.w / 2 + clearance,
+        bottom: item.type === "window" ? Math.max(0, item.sillCm - clearance) : 0,
+        top: (item.type === "window" ? item.sillCm : 0) + item.h + clearance,
+      };
+    })
+    .filter((opening) => opening.end > -wall.w / 2 && opening.start < wall.w / 2)
+    .sort((a, b) => a.start - b.start);
+}
+
+function addEditableWall(wall, openings, material) {
+  if (!openings.length) {
+    addEditableSolid(wall, material, 0, wall.h, true);
+    return;
+  }
+  let cursor = -wall.w / 2;
   for (const opening of openings) {
-    const next = [];
-    for (const segment of segments) {
-      next.push(...splitSingleWall(segment, opening));
-    }
-    segments = next;
+    const start = Math.max(cursor, Math.max(-wall.w / 2, opening.start));
+    const end = Math.max(start, Math.min(wall.w / 2, opening.end));
+    if (start - cursor >= 2) addWallPiece(wall, (cursor + start) / 2, start - cursor, 0, wall.h, material, true);
+    const openingLength = end - start;
+    const bottomHeight = Math.max(0, Math.min(opening.bottom, wall.h));
+    const topStart = Math.max(0, Math.min(opening.top, wall.h));
+    if (openingLength >= 2 && bottomHeight >= 2) addWallPiece(wall, (start + end) / 2, openingLength, 0, bottomHeight, material, false);
+    if (openingLength >= 2 && wall.h - topStart >= 2) addWallPiece(wall, (start + end) / 2, openingLength, topStart, wall.h - topStart, material, true);
+    cursor = Math.max(cursor, end);
   }
-  return segments.filter((segment) => {
-    const width = Math.abs(segment.x1 - segment.x0);
-    const depth = Math.abs(segment.z1 - segment.z0);
-    return width >= 6 && depth >= 6;
+  if (wall.w / 2 - cursor >= 2) addWallPiece(wall, (cursor + wall.w / 2) / 2, wall.w / 2 - cursor, 0, wall.h, material, true);
+}
+
+function addWallPiece(wall, alongCenterCm, lengthCm, baseCm, heightCm, material, cap) {
+  const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  return addEditableSolid({
+    ...wall,
+    x: wall.x + Math.cos(angle) * alongCenterCm,
+    z: wall.z + Math.sin(angle) * alongCenterCm,
+    w: lengthCm,
+    h: heightCm,
+  }, material, baseCm, heightCm, cap);
+}
+
+function addEditableSolid(item, material, baseCm = 0, heightCm = item.h, cap = false) {
+  const position = toWorld(item.x, item.z);
+  const height = Math.max(heightCm / 100, 0.02);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(item.w / 100, 0.02), height, Math.max(item.d / 100, 0.02)), material);
+  mesh.position.set(position.x, officeElevation + baseCm / 100 + height / 2, position.z);
+  mesh.rotation.y = -((item.rot ?? 0) * Math.PI) / 180;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  wallGroup.add(mesh);
+  if (cap && item.type === "wall") {
+    const capMaterial = getStableWallTopMaterial(item.wallCategory, item.__renderIndex ?? 0);
+    const capMesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(item.w / 100, 0.02), 0.035, Math.max(item.d / 100, 0.02)), capMaterial);
+    capMesh.position.set(position.x, officeElevation + (baseCm + heightCm) / 100 + 0.018, position.z);
+    capMesh.rotation.y = mesh.rotation.y;
+    capMesh.receiveShadow = true;
+    wallGroup.add(capMesh);
+  }
+  return mesh;
+}
+
+function addEditableDoorSill(item) {
+  addEditableSolid({ ...item, h: 4 }, materials.sill, 1, 4, false);
+}
+
+function registerSelectableObject(descriptor, pickMesh, priority = 1) {
+  descriptor.pickMesh = pickMesh;
+  objectDescriptors.set(descriptor.id, descriptor);
+  pickMesh.userData.objectId = descriptor.id;
+  pickMesh.userData.objectType = descriptor.type;
+  pickMesh.userData.pickPriority = priority;
+  objectPickMeshes.push(pickMesh);
+}
+
+function addSelectedObjectOutline() {
+  if (!columnEditorOpen || !selectedObject) return;
+  const descriptor = objectDescriptors.get(selectedObject.id);
+  const pickMesh = descriptor?.pickMesh;
+  if (!pickMesh?.geometry) return;
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(pickMesh.geometry), materials.selectionLine);
+  outline.position.copy(pickMesh.position);
+  outline.quaternion.copy(pickMesh.quaternion);
+  outline.scale.copy(pickMesh.scale);
+  outline.renderOrder = 50;
+  interactionGroup.add(outline);
+}
+
+function addSelectedWallEndpointHandles() {
+  if (!columnEditorOpen || selectedObject?.type !== "wall") return;
+  const wall = getSelectedEditableObject();
+  if (!wall) return;
+  const endpoints = getWallEndpoints(wall);
+  Object.entries(endpoints).forEach(([endpointName, point]) => {
+    const world = toWorld(point.x, point.z);
+    const visibleHandle = new THREE.Mesh(new THREE.SphereGeometry(0.1, 18, 12), materials.wallHandle);
+    visibleHandle.position.set(world.x, officeElevation + 0.11, world.z);
+    visibleHandle.renderOrder = 60;
+    interactionGroup.add(visibleHandle);
+    const hitHandle = new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), materials.objectPick);
+    hitHandle.position.copy(visibleHandle.position);
+    hitHandle.userData.objectId = wall.id;
+    hitHandle.userData.objectType = "wall";
+    hitHandle.userData.wallEndpoint = endpointName;
+    hitHandle.userData.pickPriority = 20;
+    interactionGroup.add(hitHandle);
+    objectPickMeshes.push(hitHandle);
   });
-}
-
-function splitSingleWall(wall, opening) {
-  const x0 = Math.min(wall.x0, wall.x1);
-  const x1 = Math.max(wall.x0, wall.x1);
-  const z0 = Math.min(wall.z0, wall.z1);
-  const z1 = Math.max(wall.z0, wall.z1);
-  const width = x1 - x0;
-  const depth = z1 - z0;
-  const isHorizontalWall = width >= depth;
-  const overlapX = opening.x0 < x1 && opening.x1 > x0;
-  const overlapZ = opening.z0 < z1 && opening.z1 > z0;
-  if (!overlapX || !overlapZ) return [wall];
-
-  const pieces = [];
-  if (isHorizontalWall && opening.orientation === "horizontal") {
-    const cut0 = Math.max(x0, opening.x0);
-    const cut1 = Math.min(x1, opening.x1);
-    if (cut0 - x0 >= 6) pieces.push({ ...wall, x0, x1: cut0 });
-    if (x1 - cut1 >= 6) pieces.push({ ...wall, x0: cut1, x1 });
-    return pieces;
-  }
-
-  if (!isHorizontalWall && opening.orientation === "vertical") {
-    const cut0 = Math.max(z0, opening.z0);
-    const cut1 = Math.min(z1, opening.z1);
-    if (cut0 - z0 >= 6) pieces.push({ ...wall, z0, z1: cut0 });
-    if (z1 - cut1 >= 6) pieces.push({ ...wall, z0: cut1, z1 });
-    return pieces;
-  }
-
-  return [wall];
-}
-
-function addWindows(group) {
-  for (const item of WINDOW_ITEMS) {
-    addWindow(item, group);
-  }
 }
 
 function rebuildCadPlan() {
   clearGroup(cadGroup);
   const y = officeElevation + 3.15;
-  for (const item of data.walls) addCadFootprint(item, cadMaterials.heavy, y);
-  for (const item of data.lowWalls) addCadFootprint(item, cadMaterials.medium, y);
-  for (const item of editableColumns) addCadFootprint(item, item.__id === selectedColumnId ? cadMaterials.medium : cadMaterials.heavy, y);
-  for (const item of data.doorSills ?? []) addCadFootprint(item, cadMaterials.light, y);
-  for (const item of data.doors ?? []) addCadDoor(item, y);
-  for (const item of WINDOW_ITEMS) addCadOrientedRect(item.x, item.z, item.w, Math.max(item.d, 8), item.rot ?? 0, cadMaterials.light, y);
+  addCadMeterGrid(y);
+  addConstructionCad(y);
+  for (const item of editableWalls) addCadOrientedRect(item.x, item.z, item.w, item.d, item.rot, cadMaterials.heavy, y);
+  for (const item of editableLowWalls) addCadOrientedRect(item.x, item.z, item.w, item.d, item.rot, cadMaterials.medium, y);
+  for (const item of editableColumns) addCadOrientedRect(item.x, item.z, item.w, item.d, item.rot, item.id === selectedObject?.id ? cadMaterials.medium : cadMaterials.heavy, y);
+  for (const item of editableDoors) addCadDoor(item, y);
+  for (const item of editableWindows) addCadOrientedRect(item.x, item.z, item.w, Math.max(item.d, 8), item.rot, cadMaterials.light, y);
   if (furnitureVisible) {
-    for (const item of DESIGN_ITEMS) addCadFurniture(item, y);
+    for (const item of editableFurniture) addCadFurniture(item, y);
     for (const item of data.fixtures ?? []) addCadFixture(item, y);
   }
+  for (const item of AREA_LABELS) addCadAreaLabel(item, y + 0.03);
   cadGroup.visible = cadMode;
+}
+
+function addCadMeterGrid(y) {
+  const { building } = CONSTRUCTION_PLAN;
+  for (let x = building.x0; x <= building.x1; x += 100) {
+    addCadPlanPolyline([[x, building.z0], [x, building.z1]], cadMaterials.grid, y - 0.015);
+  }
+  for (let z = building.z0; z <= building.z1; z += 100) {
+    addCadPlanPolyline([[building.x0, z], [building.x1, z]], cadMaterials.grid, y - 0.015);
+  }
+}
+
+function addConstructionCad(y) {
+  const { building, axesX, axesZ, eastParking, southParking, roadEdgeX, roadEdgeZ, levels } = CONSTRUCTION_PLAN;
+  addCadPlanPolyline([
+    [building.x0, building.z0],
+    [building.x1, building.z0],
+    [building.x1, building.z1],
+    [building.x0, building.z1],
+    [building.x0, building.z0],
+  ], cadMaterials.heavy, y);
+  addCadPlanPolyline([[roadEdgeX, bounds.z0], [roadEdgeX, roadEdgeZ]], cadMaterials.medium, y);
+  addCadPlanPolyline([[bounds.x0, roadEdgeZ], [roadEdgeX, roadEdgeZ]], cadMaterials.medium, y);
+  addCadArc(roadEdgeX, roadEdgeZ + 350, 350, -90, 0, cadMaterials.medium, y);
+
+  axesX.forEach((axis) => {
+    addCadPlanPolyline([[axis.value, -35], [axis.value, building.z1]], cadMaterials.light, y);
+    addCadTextAt(axis.label, axis.value, -48, y, 0.55);
+  });
+  axesZ.forEach((axis) => {
+    addCadPlanPolyline([[-35, axis.value], [building.x1, axis.value]], cadMaterials.light, y);
+    addCadTextAt(axis.label, -48, axis.value, y, 0.55);
+  });
+
+  const eastBays = Array.from({ length: eastParking.count }, (_, index) => ({
+    x: eastParking.x0 + eastParking.stallDepth / 2,
+    z: eastParking.z0 + eastParking.stallWidth * (index + 0.5),
+    w: eastParking.stallDepth,
+    d: eastParking.stallWidth,
+    rot: 0,
+  }));
+  eastBays.forEach((bay) => addCadOrientedRect(bay.x, bay.z, bay.w, bay.d, bay.rot, cadMaterials.medium, y));
+  addCadTextAt("東側停車 4 格｜250×550cm", 3030, 1085, y, 1.05);
+
+  const southBays = Array.from({ length: southParking.count }, (_, index) => ({
+    x: southParking.startX + southParking.spacing * index,
+    z: southParking.centerZ,
+    w: southParking.stallDepth,
+    d: southParking.stallWidth,
+    rot: southParking.angle,
+  }));
+  southBays.forEach((bay) => addCadOrientedRect(bay.x, bay.z, bay.w, bay.d, bay.rot, cadMaterials.medium, y));
+  addCadTextAt("南側斜列 5 格｜約33°（估算）", 1050, 2135, y, 1.15);
+  addCadTextAt("身障車位（估）", 180, 1740, y, 0.78);
+  addCadTextAt("污水設施 200×500cm", 420, 1980, y, 0.85);
+  addCadTextAt("退縮騎樓地", 2670, 1785, y, 0.95);
+  addCadTextAt("15M 永華一路", 3650, 880, y, 1.05);
+  addCadTextAt("主3號－15M計畫道路（永華路）", 2380, 2255, y, 1.18);
+  addCadTextAt(`室內 +${levels.office}cm`, 1380, 1545, y, 0.82);
+
+  addCadDimensionHorizontal(0, 2755, -205, "2755cm / 27.55m", y, 1.05);
+  addCadDimensionHorizontal(2755, 3175, -135, "420cm", y, 0.82);
+  let cursorX = 0;
+  CONSTRUCTION_PLAN.horizontalSegments.forEach((segment) => {
+    addCadDimensionHorizontal(cursorX, cursorX + segment, -90, `${segment}`, y, 0.48);
+    cursorX += segment;
+  });
+  addCadDimensionVertical(0, 1630, -205, "1630cm / 16.30m", y, 1.05);
+  let cursorZ = 0;
+  CONSTRUCTION_PLAN.verticalSegments.forEach((segment) => {
+    addCadDimensionVertical(cursorZ, cursorZ + segment, -90, `${segment}`, y, 0.48);
+    cursorZ += segment;
+  });
+  addCadDimensionVertical(1630, 2030, 2110, "400cm（圖面帶深）", y, 0.55);
+  addCadDimensionVertical(1420, 1630, 2830, "入口 210cm", y, 0.55);
+}
+
+function addCadPlanPolyline(points, material, y) {
+  addCadPolyline(points.map(([x, z]) => {
+    const point = toWorld(x, z);
+    return [point.x, point.z];
+  }), material, y);
+}
+
+function addCadArc(centerX, centerZ, radiusCm, startDeg, endDeg, material, y) {
+  const points = [];
+  for (let index = 0; index <= 32; index += 1) {
+    const angle = ((startDeg + (endDeg - startDeg) * (index / 32)) * Math.PI) / 180;
+    points.push([centerX + Math.cos(angle) * radiusCm, centerZ + Math.sin(angle) * radiusCm]);
+  }
+  addCadPlanPolyline(points, material, y);
+}
+
+function addCadTextAt(text, x, z, y, scale = 1) {
+  const sprite = makeCadTextSprite(text);
+  const point = toWorld(x, z);
+  sprite.scale.multiplyScalar(scale);
+  sprite.position.set(point.x, y + 0.035, point.z);
+  cadGroup.add(sprite);
+}
+
+function addCadDimensionHorizontal(x0, x1, z, text, y, textScale = 0.62) {
+  const tick = 10;
+  addCadPlanPolyline([[x0, z], [x1, z]], cadMaterials.medium, y);
+  addCadPlanPolyline([[x0, z - tick], [x0, z + tick], [x0 - tick, z + tick], [x0 + tick, z - tick]], cadMaterials.medium, y);
+  addCadPlanPolyline([[x1, z - tick], [x1, z + tick], [x1 - tick, z + tick], [x1 + tick, z - tick]], cadMaterials.medium, y);
+  addCadTextAt(text, (x0 + x1) / 2, z - 18, y, textScale);
+}
+
+function addCadDimensionVertical(z0, z1, x, text, y, textScale = 0.62) {
+  const tick = 10;
+  addCadPlanPolyline([[x, z0], [x, z1]], cadMaterials.medium, y);
+  addCadPlanPolyline([[x - tick, z0], [x + tick, z0], [x + tick, z0 - tick], [x - tick, z0 + tick]], cadMaterials.medium, y);
+  addCadPlanPolyline([[x - tick, z1], [x + tick, z1], [x + tick, z1 - tick], [x - tick, z1 + tick]], cadMaterials.medium, y);
+  addCadTextAt(text, x - 42, (z0 + z1) / 2, y, textScale);
 }
 
 function addCadFootprint(item, material, y) {
@@ -651,31 +1723,41 @@ function addCadFootprint(item, material, y) {
 }
 
 function addCadDoor(item, y) {
-  const hinge = toWorld(item.hinge.x, item.hinge.z);
-  const endA = toWorld(item.endA.x, item.endA.z);
-  const endB = toWorld(item.endB.x, item.endB.z);
-  addCadPolyline([[hinge.x, hinge.z], [endA.x, endA.z]], cadMaterials.medium, y);
-  const start = Math.atan2(endA.z - hinge.z, endA.x - hinge.x);
-  const end = Math.atan2(endB.z - hinge.z, endB.x - hinge.x);
-  let delta = end - start;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  while (delta < -Math.PI) delta += Math.PI * 2;
-  const radius = Math.max((item.radiusCm ?? 90) / 100, 0.45);
+  const angle = (item.rot * Math.PI) / 180;
+  const axis = { x: Math.cos(angle), z: Math.sin(angle) };
+  const hingeSign = item.hingeAtStart ? -1 : 1;
+  const hingePlan = { x: item.x + axis.x * item.w * 0.5 * hingeSign, z: item.z + axis.z * item.w * 0.5 * hingeSign };
+  const closedDir = { x: axis.x * -hingeSign, z: axis.z * -hingeSign };
+  const hinge = toWorld(hingePlan.x, hingePlan.z);
+  const radius = Math.max(item.w / 100, 0.45);
+  const start = Math.atan2(closedDir.z, closedDir.x);
+  const delta = (item.swingSign ?? 1) * Math.PI * 0.5;
+  addCadPolyline([[hinge.x, hinge.z], [hinge.x + closedDir.x * radius, hinge.z + closedDir.z * radius]], cadMaterials.medium, y);
+  if (!doorsOpen) return;
   const points = [];
   for (let i = 0; i <= 24; i += 1) {
-    const angle = start + delta * (i / 24);
-    points.push([hinge.x + Math.cos(angle) * radius, hinge.z + Math.sin(angle) * radius]);
+    const arcAngle = start + delta * (i / 24);
+    points.push([hinge.x + Math.cos(arcAngle) * radius, hinge.z + Math.sin(arcAngle) * radius]);
   }
   addCadPolyline(points, cadMaterials.light, y);
 }
 
+function addCadAreaLabel(item, y) {
+  const sprite = makeCadTextSprite(item.text);
+  sprite.scale.multiplyScalar(0.82);
+  const position = toWorld(item.x, item.z);
+  sprite.position.set(position.x, y, position.z);
+  cadGroup.add(sprite);
+}
+
 function addCadFurniture(item, y) {
   const rot = item.rot ?? item.rotation ?? 0;
-  if (item.type === "roundTable") {
-    addCadCircle(item.x, item.z, item.r ?? 60, cadMaterials.furniture, y);
+  const furnitureType = item.furnitureType ?? item.type;
+  if (furnitureType === "roundTable") {
+    addCadCircle(item.x, item.z, item.w / 2, cadMaterials.furniture, y);
     return;
   }
-  if (item.type === "plant") {
+  if (furnitureType === "plant") {
     addCadCircle(item.x, item.z, 24, cadMaterials.light, y);
     return;
   }
@@ -694,7 +1776,7 @@ function addCadFurniture(item, y) {
     display: [item.w ?? 120, item.d ?? 36],
     rug: [item.w ?? 160, item.d ?? 100],
   };
-  const [width, depth] = defaults[item.type] ?? [item.w ?? 80, item.d ?? 60];
+  const [width, depth] = defaults[furnitureType] ?? [item.w ?? 80, item.d ?? 60];
   addCadOrientedRect(item.x, item.z, width, depth, rot, cadMaterials.furniture, y);
 }
 
@@ -745,16 +1827,21 @@ function addWindow(item, group) {
   const p = toWorld(item.x, item.z);
   const rotation = ((item.rot ?? 0) * Math.PI) / 180;
   const width = item.w / 100;
-  const depth = item.d / 100;
+  const depth = Math.max(item.d / 100, 0.025);
+  const linkedWallDepth = (findWallReferenceById(item.wallId)?.item?.d ?? item.d) / 100;
+  const glassDepth = Math.min(depth, 0.045);
+  const frameDepth = Math.max(depth + 0.04, linkedWallDepth + 0.04, 0.1);
   const windowGroup = new THREE.Group();
-  const glassHeight = 0.82;
-  const sillHeight = officeElevation + 1.1;
+  const glassHeight = Math.max(item.h / 100, 0.3);
+  const sillHeight = officeElevation + item.sillCm / 100 + glassHeight / 2;
+  const frameBar = Math.min(0.065, glassHeight * 0.12);
 
-  addBoxToGroup(windowGroup, width, glassHeight, depth, materials.glass, 0, sillHeight, 0);
-  addBoxToGroup(windowGroup, width + 0.06, 0.055, depth + 0.025, materials.windowFrame, 0, sillHeight + glassHeight / 2 + 0.04, 0);
-  addBoxToGroup(windowGroup, width + 0.06, 0.055, depth + 0.025, materials.windowFrame, 0, sillHeight - glassHeight / 2 - 0.04, 0);
-  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, depth + 0.025, materials.windowFrame, -width / 2 - 0.03, sillHeight, 0);
-  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, depth + 0.025, materials.windowFrame, width / 2 + 0.03, sillHeight, 0);
+  addBoxToGroup(windowGroup, width, glassHeight, glassDepth, materials.glass, 0, sillHeight, 0);
+  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, materials.windowFrame, 0, sillHeight + glassHeight / 2 + frameBar / 2, 0);
+  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, materials.windowFrame, 0, sillHeight - glassHeight / 2 - frameBar / 2, 0);
+  addBoxToGroup(windowGroup, width + 0.04, frameBar, frameDepth, materials.windowFrame, 0, sillHeight, 0);
+  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, materials.windowFrame, -width / 2 - 0.03, sillHeight, 0);
+  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, materials.windowFrame, width / 2 + 0.03, sillHeight, 0);
 
   windowGroup.position.set(p.x, 0, p.z);
   windowGroup.rotation.y = rotation;
@@ -762,23 +1849,30 @@ function addWindow(item, group) {
 }
 
 function addFurniture() {
-  for (const item of DESIGN_ITEMS) {
-    if (item.type === "desk") addDeskAt(item);
-    if (item.type === "chair") addChairAt(item);
-    if (item.type === "conferenceTable") addConferenceTableAt(item);
-    if (item.type === "cabinet") addCabinetAt(item);
-    if (item.type === "shelf") addShelfAt(item);
-    if (item.type === "workbench") addWorkbenchAt(item);
-    if (item.type === "counter") addCounterAt(item);
-    if (item.type === "display") addDisplayAt(item);
-    if (item.type === "roundTable") addRoundTableAt(item);
-    if (item.type === "reception") addReceptionAt(item);
-    if (item.type === "sofa") addSofaAt(item);
-    if (item.type === "lounge") addLoungeAt(item);
-    if (item.type === "coffee") addCoffeeAt(item);
-    if (item.type === "plant") addPlant(item.x, item.z);
-    if (item.type === "rug") addRugAt(item);
+  for (const item of editableFurniture) {
+    const furnitureType = item.furnitureType ?? item.type;
+    if (furnitureType === "desk") addDeskAt(item);
+    if (furnitureType === "chair") addChairAt(item);
+    if (furnitureType === "conferenceTable") addConferenceTableAt(item);
+    if (furnitureType === "cabinet") addCabinetAt(item);
+    if (furnitureType === "shelf") addShelfAt(item);
+    if (furnitureType === "workbench") addWorkbenchAt(item);
+    if (furnitureType === "counter") addCounterAt(item);
+    if (furnitureType === "display") addDisplayAt(item);
+    if (furnitureType === "roundTable") addRoundTableAt({ ...item, r: item.w / 2 });
+    if (furnitureType === "reception") addReceptionAt(item);
+    if (furnitureType === "sofa") addSofaAt(item);
+    if (furnitureType === "lounge") addLoungeAt(item);
+    if (furnitureType === "coffee") addCoffeeAt(item);
+    if (furnitureType === "plant") addPlant(item.x, item.z);
+    if (furnitureType === "rug") addRugAt(item);
   }
+}
+
+function rebuildFurniture() {
+  clearGroup(furnitureGroup);
+  addFurniture();
+  furnitureGroup.visible = furnitureVisible && !cadMode;
 }
 
 function rectMetrics(item) {
@@ -1234,22 +2328,9 @@ function addRug(item) {
 }
 
 function addLabels() {
-  const labels = [
-    ["維修部儲藏室", 260, 210],
-    ["維修部", 835, 200],
-    ["倉庫區", 1620, 205],
-    ["20人會議室", 2440, 220],
-    ["產品展示/介紹室", 1510, 615],
-    ["會計檔案室", 780, 760],
-    ["總經理辦公室", 245, 1390],
-    ["協理辦公室", 690, 1390],
-    ["會計辦公區", 1010, 1425],
-    ["業務辦公區", 1630, 1240],
-    ["櫃檯/行銷部", 2260, 935],
-  ];
-  for (const [label, x, z] of labels) {
-    const sprite = makeTextSprite(label);
-    const p = toWorld(x, z);
+  for (const item of AREA_LABELS) {
+    const sprite = makeTextSprite(item.text);
+    const p = toWorld(item.x, item.z);
     sprite.position.set(p.x, officeElevation + 0.08, p.z);
     labelGroup.add(sprite);
   }
@@ -1304,25 +2385,18 @@ function addFootprint(item, height, material, group, options = {}) {
 }
 
 function addDoor(item, group) {
-  const hinge = toWorld(item.hinge.x, item.hinge.z);
-  const endA = toWorld(item.endA.x, item.endA.z);
-  const endB = toWorld(item.endB.x, item.endB.z);
-  const va = { x: endA.x - hinge.x, z: endA.z - hinge.z };
-  const vb = { x: endB.x - hinge.x, z: endB.z - hinge.z };
-  const lenA = Math.hypot(va.x, va.z);
-  const lenB = Math.hypot(vb.x, vb.z);
-  const radius = Math.max((lenA + lenB) / 2, 0.45);
-  let dir = { x: va.x + vb.x, z: va.z + vb.z };
-  const dirLen = Math.hypot(dir.x, dir.z);
-  if (dirLen < 0.05) dir = va;
-  else {
-    dir.x /= dirLen;
-    dir.z /= dirLen;
-  }
-
-  const height = Math.min((data.defaults?.doorHeightCm ?? 198) / 100, Math.max(currentWallHeight - 0.02, 1.7));
-  const length = Math.max(radius * 0.92, 0.68);
-  const thickness = item.type === "narrow" ? 0.04 : 0.05;
+  const angle = (item.rot * Math.PI) / 180;
+  const axis = { x: Math.cos(angle), z: Math.sin(angle) };
+  const hingeSign = item.hingeAtStart ? -1 : 1;
+  const closedDir = { x: axis.x * -hingeSign, z: axis.z * -hingeSign };
+  const hingePlan = { x: item.x + axis.x * item.w * 0.5 * hingeSign, z: item.z + axis.z * item.w * 0.5 * hingeSign };
+  const hinge = toWorld(hingePlan.x, hingePlan.z);
+  const closedAngle = Math.atan2(closedDir.z, closedDir.x);
+  const openAngle = closedAngle + (doorsOpen ? (item.swingSign ?? 1) * Math.PI * 0.5 : 0);
+  const dir = { x: Math.cos(openAngle), z: Math.sin(openAngle) };
+  const height = Math.max(item.h / 100, 1.5);
+  const length = Math.max(item.w / 100, 0.4);
+  const thickness = Math.max(item.d / 100, 0.035);
   const panel = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), materials.door);
   panel.position.set(hinge.x + dir.x * length * 0.5, officeElevation + height * 0.5, hinge.z + dir.z * length * 0.5);
   panel.rotation.y = -Math.atan2(dir.z, dir.x);
@@ -1340,7 +2414,9 @@ function addDoor(item, group) {
   hingePost.castShadow = true;
   group.add(hingePost);
 
-  addDoorSwingArc(hinge, va, vb, radius, group);
+  const closedVector = { x: closedDir.x * length, z: closedDir.z * length };
+  const openVector = { x: dir.x * length, z: dir.z * length };
+  if (doorsOpen) addDoorSwingArc(hinge, closedVector, openVector, length, group);
 }
 
 function addDoorSwingArc(hinge, va, vb, radius, group) {
@@ -1409,80 +2485,239 @@ function ensureSelectedColumn() {
 }
 
 function getSelectedColumn() {
-  return editableColumns.find((column) => column.__id === selectedColumnId) ?? null;
+  return editableColumns.find((column) => column.id === selectedColumnId) ?? null;
 }
 
 function getColumnMetrics(column) {
-  const x0 = Math.min(column.x0, column.x1);
-  const x1 = Math.max(column.x0, column.x1);
-  const z0 = Math.min(column.z0, column.z1);
-  const z1 = Math.max(column.z0, column.z1);
-  return {
-    x: (x0 + x1) / 2,
-    z: (z0 + z1) / 2,
-    w: x1 - x0,
-    d: z1 - z0,
-  };
+  return getEditableMetrics(column);
 }
 
 function setColumnMetrics(column, metrics) {
-  const current = getColumnMetrics(column);
-  const width = Math.max(Number(metrics.w) || current.w, 10);
-  const depth = Math.max(Number(metrics.d) || current.d, 10);
-  const x = Number.isFinite(Number(metrics.x)) ? Number(metrics.x) : current.x;
-  const z = Number.isFinite(Number(metrics.z)) ? Number(metrics.z) : current.z;
-  column.x0 = x - width / 2;
-  column.x1 = x + width / 2;
-  column.z0 = z - depth / 2;
-  column.z1 = z + depth / 2;
-  column.shape = "rect";
-  column.kind = "column";
+  setEditableMetrics(column, metrics);
 }
 
 function syncColumnEditor() {
-  const selected = ensureSelectedColumn();
-  const disabled = !columnEditorOpen || !selected;
-  Object.values(columnInputs).forEach((input) => {
-    if (input) input.disabled = disabled;
+  const descriptor = selectedObject ? objectDescriptors.get(selectedObject.id) : null;
+  const selected = descriptor ? getEditableObjectById(descriptor.id, descriptor.type) : null;
+  const editable = Boolean(columnEditorOpen && descriptor?.editable && selected);
+  objectEditorInputs.forEach((input) => {
+    if (input) input.disabled = !editable;
   });
-  document.querySelector("#deleteColumn")?.toggleAttribute("disabled", disabled);
+  if (objectRotationInput && ["door", "window"].includes(descriptor?.type)) {
+    objectRotationInput.disabled = true;
+  }
+  if (objectHeightInput) objectHeightInput.max = descriptor?.type === "column" ? "1000" : descriptor?.type === "wall" ? "600" : "500";
+  if (objectVerticalField) objectVerticalField.hidden = descriptor?.type !== "window";
+  if (objectVerticalInput) objectVerticalInput.disabled = !editable || descriptor?.type !== "window";
+  if (descriptor?.type === "furniture") {
+    columnInputs.w.disabled = true;
+    columnInputs.d.disabled = true;
+    objectHeightInput.disabled = true;
+  }
+  deleteObjectButton?.toggleAttribute("disabled", !editable);
+  splitWallButton?.toggleAttribute("disabled", descriptor?.type !== "wall");
+  flipDoorButton?.toggleAttribute("disabled", descriptor?.type !== "door");
+  updateHistoryButtons();
 
   if (!columnHint) return;
   if (!columnEditorOpen) {
-    columnHint.textContent = "重整後恢復原樣";
+    columnHint.textContent = "點選牆、柱、門、窗或家具";
     return;
   }
-  if (!selected) {
-    columnHint.textContent = "目前 0 根柱；可按新增";
+  if (!descriptor) {
+    objectEditorInputs.forEach((input) => {
+      if (input) input.value = "";
+    });
+    if (objectTypeOutput) objectTypeOutput.textContent = "尚未選取";
+    if (objectIdOutput) objectIdOutput.textContent = "點選模型中的物件";
+    if (objectVerticalField) objectVerticalField.hidden = true;
+    if (objectRelation) objectRelation.hidden = true;
+    Object.entries({ x: "X", z: "Z", w: "寬", d: "深" }).forEach(([key, label]) => {
+      if (columnFieldLabels[key]) columnFieldLabels[key].textContent = label;
+    });
+    columnHint.textContent = "點選牆、柱、門、窗或家具";
     return;
   }
 
-  const index = editableColumns.findIndex((column) => column.__id === selected.__id) + 1;
-  const metrics = getColumnMetrics(selected);
+  const metrics = descriptor.metrics;
   columnInputs.x.value = Math.round(metrics.x);
   columnInputs.z.value = Math.round(metrics.z);
   columnInputs.w.value = Math.round(metrics.w);
   columnInputs.d.value = Math.round(metrics.d);
-  columnHint.textContent = `第 ${index}/${editableColumns.length} 根；點住柱子可拖曳`;
+  if (objectHeightInput) objectHeightInput.value = Math.round(metrics.h);
+  if (objectRotationInput) objectRotationInput.value = Math.round(metrics.rot ?? 0);
+  if (objectVerticalInput && descriptor.type === "window") {
+    const wallHeight = descriptor.linkedWall?.item?.h ?? 600;
+    objectVerticalInput.max = String(Math.max(0, Math.round(wallHeight - metrics.h)));
+    objectVerticalInput.value = Math.round(metrics.sillCm ?? 0);
+  }
+  if (objectHeightLabel) objectHeightLabel.textContent = "高 cm";
+  Object.entries(descriptor.fieldLabels ?? {}).forEach(([key, label]) => {
+    if (columnFieldLabels[key]) columnFieldLabels[key].textContent = label;
+  });
+  if (objectTypeOutput) objectTypeOutput.textContent = descriptor.typeLabel;
+  if (objectIdOutput) objectIdOutput.textContent = descriptor.sourceLabel;
+  if (descriptor.linkedWall) {
+    if (objectRelation) objectRelation.hidden = false;
+    if (objectLinkedWall) objectLinkedWall.textContent = descriptor.linkedWall.label;
+  } else if (objectRelation) {
+    objectRelation.hidden = true;
+  }
+
+  if (editable) {
+    const collection = getEditableCollection(descriptor.type);
+    const index = collection.findIndex((item) => item.id === selected.id) + 1;
+    const wallConstraint = ["door", "window"].includes(descriptor.type) ? "；位置與角度會吸附牆面" : "";
+    const wallResizeHint = descriptor.type === "wall" ? "；拖曳兩端圓點伸縮" : "";
+    const furnitureHint = descriptor.type === "furniture" ? "；僅移動與轉向" : "";
+    columnHint.textContent = `${descriptor.typeLabel} ${index}/${collection.length}；可拖曳或輸入整數公分${wallConstraint}${wallResizeHint}${furnitureHint}`;
+  } else {
+    columnHint.textContent = `${descriptor.typeLabel}；可拖曳或輸入整數公分`;
+  }
 }
 
 function addColumnAtViewTarget() {
   const target = toPlan(controls.target.x, controls.target.z);
   const selected = getSelectedColumn();
   const size = selected ? getColumnMetrics(selected) : { w: 50, d: 50 };
+  const id = createObjectId("column");
   const column = {
+    id,
+    __id: id,
+    type: "column",
     kind: "column",
-    shape: "rect",
-    x0: target.x - size.w / 2,
-    x1: target.x + size.w / 2,
-    z0: target.z - size.d / 2,
-    z1: target.z + size.d / 2,
+    x: Math.round(target.x),
+    z: Math.round(target.z),
+    w: Math.round(size.w),
+    d: Math.round(size.d),
+    h: Math.round(selected?.h ?? DEFAULT_COLUMN_HEIGHT_CM),
+    rot: 0,
     source: "temporary-browser-column",
-    __id: `column-${nextColumnId++}`,
   };
+  nextColumnId += 1;
   editableColumns.push(column);
   selectedColumnId = column.__id;
+  selectedObject = { id: column.__id, type: "column" };
   syncColumnEditor();
+  rebuildWalls();
+}
+
+function addEditableObjectAtViewTarget(type) {
+  if (type === "column") {
+    addColumnAtViewTarget();
+    return;
+  }
+  const target = toPlan(controls.target.x, controls.target.z);
+  const id = createObjectId(type);
+  if (type === "wall") {
+    const wall = {
+      id,
+      __id: id,
+      type: "wall",
+      kind: "wall",
+      x: Math.round(target.x),
+      z: Math.round(target.z),
+      w: 300,
+      d: DEFAULT_WALL_THICKNESS_CM,
+      h: Math.round(currentWallHeight * 100),
+      rot: 0,
+      wallCategory: "interior",
+      source: "user-wall",
+    };
+    editableWalls.push(wall);
+    selectedObject = { id, type: "wall" };
+  }
+  if (type === "door") {
+    if (!editableWalls.length) return;
+    const door = {
+      id,
+      __id: id,
+      type: "door",
+      kind: "door",
+      x: Math.round(target.x),
+      z: Math.round(target.z),
+      w: STANDARD_DOOR_WIDTH_CM,
+      d: STANDARD_DOOR_THICKNESS_CM,
+      h: STANDARD_DOOR_HEIGHT_CM,
+      rot: 0,
+      hingeAtStart: true,
+      swingSign: 1,
+      swingModelVersion: 2,
+      wallId: null,
+      source: "user-door",
+    };
+    updateOpeningWallLink(door);
+    editableDoors.push(door);
+    selectedObject = { id, type: "door" };
+  }
+  if (type === "window") {
+    if (!editableWalls.length) return;
+    const windowItem = {
+      id,
+      __id: id,
+      type: "window",
+      kind: "window",
+      x: Math.round(target.x),
+      z: Math.round(target.z),
+      w: 180,
+      d: 8,
+      h: 110,
+      sillCm: 80,
+      rot: 0,
+      wallId: null,
+      source: "user-window",
+    };
+    updateOpeningWallLink(windowItem);
+    editableWindows.push(windowItem);
+    selectedObject = { id, type: "window" };
+  }
+  selectedColumnId = null;
+  rebuildWalls();
+}
+
+function deleteSelectedEditableObject() {
+  const selected = getSelectedEditableObject();
+  if (!selected) return;
+  const collection = getEditableCollection(selected.type);
+  const index = collection.findIndex((item) => item.id === selected.id);
+  if (index < 0) return;
+  if (selected.type === "wall") {
+    editableDoors = editableDoors.filter((item) => item.wallId !== selected.id);
+    editableWindows = editableWindows.filter((item) => item.wallId !== selected.id);
+  }
+  collection.splice(index, 1);
+  selectedObject = null;
+  selectedColumnId = null;
+  if (selected.type === "furniture") rebuildFurniture();
+  rebuildWalls();
+}
+
+function splitSelectedWall() {
+  const wall = getSelectedEditableObject();
+  if (!wall || wall.type !== "wall" || wall.w < 40) return;
+  const original = { x: wall.x, z: wall.z, w: wall.w, rot: wall.rot };
+  const endpoints = getWallEndpoints(wall);
+  const middle = { x: (endpoints.start.x + endpoints.end.x) / 2, z: (endpoints.start.z + endpoints.end.z) / 2 };
+  const secondId = createObjectId("wall");
+  const second = { ...wall, id: secondId, __id: secondId, source: `${wall.source}-split` };
+  setWallFromEndpoints(wall, endpoints.start, middle);
+  setWallFromEndpoints(second, middle, endpoints.end);
+  const axis = getWallAxis(original);
+  [...editableDoors, ...editableWindows].forEach((opening) => {
+    if (opening.wallId !== wall.id) return;
+    const along = (opening.x - original.x) * axis.x + (opening.z - original.z) * axis.z;
+    if (along >= 0) opening.wallId = second.id;
+  });
+  editableWalls.push(second);
+  refreshOpeningWallLinks();
+  selectedObject = { id: second.id, type: "wall" };
+  rebuildWalls();
+}
+
+function flipSelectedDoor() {
+  const door = getSelectedEditableObject();
+  if (!door || door.type !== "door") return;
+  door.swingSign = door.swingSign === -1 ? 1 : -1;
   rebuildWalls();
 }
 
@@ -1492,6 +2727,7 @@ function deleteSelectedColumn() {
   if (index < 0) return;
   editableColumns.splice(index, 1);
   selectedColumnId = editableColumns[Math.min(index, editableColumns.length - 1)]?.__id ?? null;
+  selectedObject = selectedColumnId ? { id: selectedColumnId, type: "column" } : null;
   syncColumnEditor();
   rebuildWalls();
 }
@@ -1499,6 +2735,7 @@ function deleteSelectedColumn() {
 function resetEditableColumns() {
   editableColumns = makeEditableColumns(data.columns);
   selectedColumnId = editableColumns[0]?.__id ?? null;
+  selectedObject = selectedColumnId ? { id: selectedColumnId, type: "column" } : null;
   syncColumnEditor();
   rebuildWalls();
 }
@@ -1509,20 +2746,128 @@ function getCurrentPlanState() {
     schemaVersion: PLAN_SCHEMA_VERSION,
     savedAt: new Date().toISOString(),
     wallHeightM: Number(currentWallHeight.toFixed(2)),
-    columns: editableColumns.map((column) => ({
-      kind: "column",
-      shape: "rect",
-      x0: Number(column.x0),
-      z0: Number(column.z0),
-      x1: Number(column.x1),
-      z1: Number(column.z1),
-      source: typeof column.source === "string" ? column.source : "saved-browser-column",
-    })),
+    exteriorWallHeightM: Number(currentExteriorWallHeight.toFixed(2)),
+    walls: editableWalls.map(serializeEditableItem),
+    lowWalls: editableLowWalls.map(serializeEditableItem),
+    columns: editableColumns.map(serializeEditableItem),
+    doors: editableDoors.map(serializeEditableItem),
+    windows: editableWindows.map(serializeEditableItem),
+    furniture: editableFurniture.map(serializeEditableItem),
   };
 }
 
+function serializeEditableItem(item) {
+  const result = {
+    id: item.id,
+    type: item.type,
+    kind: item.kind,
+    x: Math.round(item.x),
+    z: Math.round(item.z),
+    w: Math.round(item.w),
+    d: Math.round(item.d),
+    h: Math.round(item.h),
+    rot: Math.round(item.rot ?? 0),
+    source: String(item.source ?? item.id).slice(0, 120),
+  };
+  if (item.type === "door") {
+    result.hingeAtStart = Boolean(item.hingeAtStart);
+    result.swingSign = item.swingSign === -1 ? -1 : 1;
+    result.swingModelVersion = 2;
+    result.wallId = item.wallId ?? null;
+  }
+  if (item.type === "window") {
+    result.sillCm = Math.round(item.sillCm ?? 80);
+    result.wallId = item.wallId ?? null;
+  }
+  if (item.type === "wall") result.wallCategory = inferWallCategory(item);
+  if (item.type === "furniture") result.furnitureType = item.furnitureType;
+  return result;
+}
+
+function getOriginalEditableState(
+  wallHeightM = DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100,
+  exteriorWallHeightM = DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100,
+) {
+  const original = {
+    walls: makeEditableFootprints(data.walls, "wall", Math.round(wallHeightM * 100)),
+    lowWalls: makeEditableFootprints(data.lowWalls, "low-wall", data.defaults?.lowWallHeightCm ?? 130),
+    columns: makeEditableColumns(data.columns),
+    doors: makeEditableDoors(data.doors ?? [], data.doorSills ?? []),
+    windows: makeEditableWindows(WINDOW_ITEMS),
+    furniture: makeEditableFurniture(DESIGN_ITEMS),
+  };
+  assignWallCategories(original.walls);
+  original.walls.forEach((wall) => {
+    wall.h = Math.round((wall.wallCategory === "exterior" ? exteriorWallHeightM : wallHeightM) * 100);
+  });
+  normalizeAmbiguousToiletWallStubs(original.walls);
+  bridgeWallSegmentsAtDoors(original.walls, original.doors, original.windows);
+  refreshOpeningWallLinks(original.walls, original.doors, original.windows);
+  return original;
+}
+
+function normalizeEditableItems(items, type, limit = 200) {
+  if (!Array.isArray(items) || items.length > limit) throw new Error(`${type} 資料數量不正確`);
+  const usedIds = new Set();
+  return items.map((item, index) => {
+    const numeric = ["x", "z", "w", "d", "h", "rot"].reduce((values, key) => ({ ...values, [key]: Number(item?.[key]) }), {});
+    if (Object.values(numeric).some((value) => !Number.isFinite(value) || Math.abs(value) > 100000)) {
+      throw new Error(`${type} 第 ${index + 1} 筆尺寸不正確`);
+    }
+    const minimumWidth = type === "door" || type === "window" ? 40 : 10;
+    const minimumDepth = type === "column" ? 10 : 3;
+    const minimumHeight = type === "door" ? 150 : type === "window" ? 30 : type === "furniture" ? 1 : 10;
+    if (numeric.w < minimumWidth || numeric.d < minimumDepth || numeric.h < minimumHeight) {
+      throw new Error(`${type} 第 ${index + 1} 筆尺寸過小`);
+    }
+    const preferredId = typeof item.id === "string" && item.id.trim() && item.id.length <= 120
+      ? item.id.trim()
+      : getModelObjectId(type, item, index);
+    let id = preferredId;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `${preferredId}-${suffix++}`;
+    usedIds.add(id);
+    const normalized = {
+      id,
+      __id: id,
+      type,
+      kind: type,
+      x: Math.round(numeric.x),
+      z: Math.round(numeric.z),
+      w: Math.round(numeric.w),
+      d: Math.round(numeric.d),
+      h: Math.round(Math.min(numeric.h, type === "column" ? 1000 : type === "wall" ? 600 : 500)),
+      rot: normalizeAngle(Math.round(numeric.rot)),
+      source: typeof item.source === "string" ? item.source.slice(0, 120) : `imported-${type}`,
+    };
+    if (type === "door") {
+      normalized.hingeAtStart = Boolean(item.hingeAtStart);
+      const savedSwingSign = item.swingSign === -1 ? -1 : 1;
+      normalized.swingSign = Number(item.swingModelVersion) >= 2 || normalized.hingeAtStart
+        ? savedSwingSign
+        : -savedSwingSign;
+      normalized.swingModelVersion = 2;
+      normalized.wallId = typeof item.wallId === "string" ? item.wallId : null;
+    }
+    if (type === "window") {
+      normalized.sillCm = Math.max(0, Math.round(Number(item.sillCm ?? 80)));
+      normalized.wallId = typeof item.wallId === "string" ? item.wallId : null;
+    }
+    if (type === "wall") {
+      normalized.wallCategory = item.wallCategory === "exterior" || item.wallCategory === "interior"
+        ? item.wallCategory
+        : inferWallCategory(normalized);
+    }
+    if (type === "furniture") {
+      normalized.furnitureType = typeof item.furnitureType === "string" ? item.furnitureType.slice(0, 40) : "desk";
+    }
+    return normalized;
+  });
+}
+
 function normalizePlanState(plan) {
-  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || plan.schemaVersion !== PLAN_SCHEMA_VERSION) {
+  const schemaVersion = Number(plan?.schemaVersion);
+  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || ![1, 2, 3, 4, PLAN_SCHEMA_VERSION].includes(schemaVersion)) {
     throw new Error("不是相容的封王 288 號調整方案");
   }
   if (!Array.isArray(plan.columns) || plan.columns.length > 100) {
@@ -1530,31 +2875,39 @@ function normalizePlanState(plan) {
   }
 
   const wallHeightM = Number(plan.wallHeightM);
+  const exteriorWallHeightM = Number(plan.exteriorWallHeightM ?? wallHeightM);
   const minWallHeight = Number(wallHeightInput.min);
   const maxWallHeight = Number(wallHeightInput.max);
   if (!Number.isFinite(wallHeightM) || wallHeightM < minWallHeight || wallHeightM > maxWallHeight) {
     throw new Error(`牆高必須介於 ${minWallHeight.toFixed(2)}m 到 ${maxWallHeight.toFixed(2)}m`);
   }
+  if (!Number.isFinite(exteriorWallHeightM) || exteriorWallHeightM < minWallHeight || exteriorWallHeightM > maxWallHeight) {
+    throw new Error(`外牆高度必須介於 ${minWallHeight.toFixed(2)}m 到 ${maxWallHeight.toFixed(2)}m`);
+  }
 
-  const columns = plan.columns.map((column, index) => {
-    const values = [column?.x0, column?.z0, column?.x1, column?.z1].map(Number);
-    if (values.some((value) => !Number.isFinite(value) || Math.abs(value) > 100000)) {
-      throw new Error(`第 ${index + 1} 根柱子的座標不正確`);
-    }
-    const [x0, z0, x1, z1] = values;
-    if (Math.abs(x1 - x0) < 10 || Math.abs(z1 - z0) < 10) {
-      throw new Error(`第 ${index + 1} 根柱子的寬或深不得小於 10cm`);
-    }
-    return {
-      kind: "column",
-      shape: "rect",
-      x0,
-      z0,
-      x1,
-      z1,
-      source: typeof column.source === "string" ? column.source.slice(0, 120) : "imported-browser-column",
+  let collections;
+  if (schemaVersion < 3) {
+    collections = getOriginalEditableState(wallHeightM, exteriorWallHeightM);
+    collections.columns = makeEditableFootprints(plan.columns, "column", DEFAULT_COLUMN_HEIGHT_CM);
+  } else {
+    const fallback = getOriginalEditableState(wallHeightM, exteriorWallHeightM);
+    collections = {
+      walls: normalizeEditableItems(plan.walls ?? fallback.walls, "wall"),
+      lowWalls: normalizeEditableItems(plan.lowWalls ?? fallback.lowWalls, "low-wall"),
+      columns: normalizeEditableItems(plan.columns, "column", 100),
+      doors: normalizeEditableItems(plan.doors ?? fallback.doors, "door", 100),
+      windows: normalizeEditableItems(plan.windows ?? fallback.windows, "window", 100),
+      furniture: normalizeEditableItems(plan.furniture ?? fallback.furniture, "furniture", 200),
     };
-  });
+  }
+  if (schemaVersion < 4) {
+    collections.doors.forEach((door) => {
+      door.w = STANDARD_DOOR_WIDTH_CM;
+      door.d = STANDARD_DOOR_THICKNESS_CM;
+      door.h = STANDARD_DOOR_HEIGHT_CM;
+    });
+  }
+  assignWallCategories(collections.walls);
 
   const savedAt = new Date(plan.savedAt);
   return {
@@ -1562,26 +2915,153 @@ function normalizePlanState(plan) {
     schemaVersion: PLAN_SCHEMA_VERSION,
     savedAt: Number.isNaN(savedAt.getTime()) ? new Date().toISOString() : savedAt.toISOString(),
     wallHeightM: Number(wallHeightM.toFixed(2)),
-    columns,
+    exteriorWallHeightM: Number(exteriorWallHeightM.toFixed(2)),
+    walls: collections.walls.map(serializeEditableItem),
+    lowWalls: collections.lowWalls.map(serializeEditableItem),
+    columns: collections.columns.map(serializeEditableItem),
+    doors: collections.doors.map(serializeEditableItem),
+    windows: collections.windows.map(serializeEditableItem),
+    furniture: collections.furniture.map(serializeEditableItem),
   };
 }
 
-function applyPlanState(plan) {
+function createOriginalPlanState() {
+  const defaultWallHeightM = DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100;
+  const defaultExteriorWallHeightM = DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100;
+  return normalizePlanState({
+    format: PLAN_FORMAT,
+    schemaVersion: PLAN_SCHEMA_VERSION,
+    savedAt: new Date().toISOString(),
+    wallHeightM: defaultWallHeightM,
+    exteriorWallHeightM: defaultExteriorWallHeightM,
+    ...getOriginalEditableState(defaultWallHeightM, defaultExteriorWallHeightM),
+  });
+}
+
+function applyPlanState(plan, { clearHistory = true, preserveSelection = false } = {}) {
   const normalized = normalizePlanState(plan);
+  const previousSelection = preserveSelection && selectedObject ? { ...selectedObject } : null;
   currentWallHeight = normalized.wallHeightM;
+  currentExteriorWallHeight = normalized.exteriorWallHeightM;
   wallHeightInput.value = currentWallHeight.toFixed(2);
-  editableColumns = makeEditableColumns(normalized.columns);
-  selectedColumnId = editableColumns[0]?.__id ?? null;
+  exteriorWallHeightInput.value = currentExteriorWallHeight.toFixed(2);
+  editableWalls = normalizeEditableItems(normalized.walls, "wall");
+  editableLowWalls = normalizeEditableItems(normalized.lowWalls, "low-wall");
+  editableColumns = normalizeEditableItems(normalized.columns, "column", 100);
+  editableDoors = normalizeEditableItems(normalized.doors, "door", 100);
+  editableWindows = normalizeEditableItems(normalized.windows, "window", 100);
+  editableFurniture = normalizeEditableItems(normalized.furniture, "furniture", 200);
+  bridgeWallSegmentsAtDoors();
+  refreshOpeningWallLinks();
+  selectedObject = previousSelection && getEditableObjectById(previousSelection.id, previousSelection.type) ? previousSelection : null;
+  selectedColumnId = selectedObject?.type === "column" ? selectedObject.id : null;
+  draggingObjectId = null;
+  controls.enabled = true;
+  if (clearHistory) clearEditHistory();
   updateWallHeightLabel();
-  syncColumnEditor();
+  rebuildFurniture();
   rebuildWalls();
   return normalized;
 }
 
-function readStoredDraft() {
-  const raw = window.localStorage.getItem(PLAN_STORAGE_KEY);
-  if (!raw) return null;
-  return normalizePlanState(JSON.parse(raw));
+function createEmptyWorkspace() {
+  return {
+    format: WORKSPACE_FORMAT,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    schemes: [],
+  };
+}
+
+function createSchemeId(prefix = "scheme") {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeSchemeName(value, fallback = "未命名方案") {
+  const name = String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+  return name || fallback;
+}
+
+function normalizeWorkspace(value) {
+  if (!value || typeof value !== "object" || value.format !== WORKSPACE_FORMAT || Number(value.schemaVersion) !== WORKSPACE_SCHEMA_VERSION) {
+    throw new Error("方案資料格式不相容");
+  }
+  if (!Array.isArray(value.schemes) || value.schemes.length > MAX_SCHEMES) {
+    throw new Error(`方案數量不得超過 ${MAX_SCHEMES} 組`);
+  }
+
+  const usedIds = new Set();
+  const schemes = value.schemes.map((scheme, index) => {
+    const preferredId = typeof scheme?.id === "string" && scheme.id.trim() && scheme.id.length <= 120
+      ? scheme.id.trim()
+      : createSchemeId(`scheme-${index + 1}`);
+    let id = preferredId === ORIGINAL_SCHEME_ID ? `${preferredId}-copy` : preferredId;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `${preferredId}-${suffix++}`;
+    usedIds.add(id);
+    const createdAt = new Date(scheme?.createdAt);
+    const updatedAt = new Date(scheme?.updatedAt);
+    return {
+      id,
+      name: normalizeSchemeName(scheme?.name, `方案 ${index + 1}`),
+      createdAt: Number.isNaN(createdAt.getTime()) ? new Date().toISOString() : createdAt.toISOString(),
+      updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date().toISOString() : updatedAt.toISOString(),
+      plan: normalizePlanState(scheme?.plan),
+    };
+  });
+  return { format: WORKSPACE_FORMAT, schemaVersion: WORKSPACE_SCHEMA_VERSION, schemes };
+}
+
+function loadWorkspace() {
+  const rawWorkspace = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
+  if (rawWorkspace) {
+    try {
+      return normalizeWorkspace(JSON.parse(rawWorkspace));
+    } catch (error) {
+      console.warn("Stored workspace could not be read", error);
+      return createEmptyWorkspace();
+    }
+  }
+
+  const emptyWorkspace = createEmptyWorkspace();
+  const legacyDraft = window.localStorage.getItem(PLAN_STORAGE_KEY);
+  if (!legacyDraft) return emptyWorkspace;
+  try {
+    const plan = normalizePlanState(JSON.parse(legacyDraft));
+    const now = new Date().toISOString();
+    emptyWorkspace.schemes.push({
+      id: createSchemeId("legacy"),
+      name: "舊版草稿",
+      createdAt: plan.savedAt || now,
+      updatedAt: plan.savedAt || now,
+      plan,
+    });
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(emptyWorkspace));
+  } catch (error) {
+    console.warn("Legacy draft could not be migrated", error);
+  }
+  return emptyWorkspace;
+}
+
+function persistWorkspace() {
+  workspace = normalizeWorkspace(workspace);
+  window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
+}
+
+function getSelectedScheme() {
+  return workspace.schemes.find((scheme) => scheme.id === selectedSchemeId) ?? null;
+}
+
+function renderSchemeOptions() {
+  if (!schemeSelect) return;
+  const validSchemeIds = new Set(workspace.schemes.map((scheme) => scheme.id));
+  if (selectedSchemeId !== ORIGINAL_SCHEME_ID && !validSchemeIds.has(selectedSchemeId)) {
+    selectedSchemeId = ORIGINAL_SCHEME_ID;
+  }
+  schemeSelect.replaceChildren(new Option("原始格局（鎖定）", ORIGINAL_SCHEME_ID));
+  workspace.schemes.forEach((scheme) => {
+    schemeSelect.add(new Option(scheme.name, scheme.id));
+  });
+  schemeSelect.value = selectedSchemeId;
 }
 
 function formatDraftTime(value) {
@@ -1597,23 +3077,44 @@ function formatDraftTime(value) {
 }
 
 function refreshPlanStorageStatus(message = "") {
-  try {
-    const draft = readStoredDraft();
-    if (loadDraftButton) loadDraftButton.disabled = !draft;
-    if (planStorageStatus) {
-      planStorageStatus.textContent = message || (draft ? `本機草稿 ${formatDraftTime(draft.savedAt)}` : "尚未儲存本機草稿");
-    }
-  } catch (error) {
-    if (loadDraftButton) loadDraftButton.disabled = true;
-    if (planStorageStatus) planStorageStatus.textContent = message || `草稿無法讀取：${error.message}`;
+  const selectedScheme = getSelectedScheme();
+  const isOriginal = selectedSchemeId === ORIGINAL_SCHEME_ID;
+  if (saveDraftButton) saveDraftButton.disabled = isOriginal;
+  if (loadDraftButton) loadDraftButton.disabled = !isOriginal && !selectedScheme;
+  if (renameSchemeButton) renameSchemeButton.disabled = isOriginal || !selectedScheme;
+  if (deleteSchemeButton) deleteSchemeButton.disabled = isOriginal || !selectedScheme;
+  if (!planStorageStatus) return;
+  if (message) {
+    planStorageStatus.textContent = message;
+    return;
+  }
+
+  const referencePlan = isOriginal ? createOriginalPlanState() : selectedScheme?.plan;
+  const matches = referencePlan ? planStatesMatch(getCurrentPlanState(), referencePlan) : false;
+  if (isOriginal) {
+    planStorageStatus.textContent = matches ? "原始格局（永久鎖定）" : "目前有未儲存調整；請新增方案";
+  } else if (!selectedScheme) {
+    planStorageStatus.textContent = "找不到選取的方案";
+  } else if (matches) {
+    planStorageStatus.textContent = `已儲存 ${formatDraftTime(selectedScheme.updatedAt)}`;
+  } else {
+    planStorageStatus.textContent = "目前內容與此方案不同";
   }
 }
 
 function saveDraft() {
   try {
-    const plan = getCurrentPlanState();
-    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
-    refreshPlanStorageStatus(`草稿已儲存 ${formatDraftTime(plan.savedAt)}`);
+    const scheme = getSelectedScheme();
+    if (!scheme) {
+      refreshPlanStorageStatus("原始格局不可覆寫，請先新增方案");
+      return;
+    }
+    const now = new Date().toISOString();
+    scheme.plan = getCurrentPlanState();
+    scheme.updatedAt = now;
+    persistWorkspace();
+    renderSchemeOptions();
+    refreshPlanStorageStatus(`「${scheme.name}」已儲存 ${formatDraftTime(now)}`);
   } catch (error) {
     refreshPlanStorageStatus(`儲存失敗：${error.message}`);
   }
@@ -1621,22 +3122,74 @@ function saveDraft() {
 
 function loadDraft() {
   try {
-    const draft = readStoredDraft();
-    if (!draft) {
-      refreshPlanStorageStatus("目前沒有本機草稿");
-      return;
-    }
-    const loaded = applyPlanState(draft);
-    refreshPlanStorageStatus(`已載入草稿 ${formatDraftTime(loaded.savedAt)}`);
+    const scheme = getSelectedScheme();
+    const isOriginal = selectedSchemeId === ORIGINAL_SCHEME_ID;
+    if (!isOriginal && !scheme) throw new Error("找不到選取的方案");
+    applyPlanState(isOriginal ? createOriginalPlanState() : scheme.plan);
+    refreshPlanStorageStatus(isOriginal ? "已載入永久鎖定的原始格局" : `已載入「${scheme.name}」`);
   } catch (error) {
     refreshPlanStorageStatus(`載入失敗：${error.message}`);
   }
 }
 
+function getUniqueSchemeName(value, ignoredId = null) {
+  const base = normalizeSchemeName(value);
+  const names = new Set(workspace.schemes.filter((scheme) => scheme.id !== ignoredId).map((scheme) => scheme.name.toLocaleLowerCase("zh-TW")));
+  if (!names.has(base.toLocaleLowerCase("zh-TW"))) return base;
+  let suffix = 2;
+  while (names.has(`${base} ${suffix}`.toLocaleLowerCase("zh-TW"))) suffix += 1;
+  return `${base} ${suffix}`;
+}
+
+function createScheme() {
+  if (workspace.schemes.length >= MAX_SCHEMES) {
+    refreshPlanStorageStatus(`最多可建立 ${MAX_SCHEMES} 組方案`);
+    return;
+  }
+  const now = new Date().toISOString();
+  const scheme = {
+    id: createSchemeId(),
+    name: getUniqueSchemeName(`方案 ${workspace.schemes.length + 1}`),
+    createdAt: now,
+    updatedAt: now,
+    plan: getCurrentPlanState(),
+  };
+  workspace.schemes.push(scheme);
+  selectedSchemeId = scheme.id;
+  persistWorkspace();
+  renderSchemeOptions();
+  refreshPlanStorageStatus(`已建立並儲存「${scheme.name}」`);
+}
+
+function renameSelectedScheme() {
+  const scheme = getSelectedScheme();
+  if (!scheme) return;
+  const proposedName = window.prompt("重新命名方案", scheme.name);
+  if (proposedName === null) return;
+  scheme.name = getUniqueSchemeName(proposedName, scheme.id);
+  scheme.updatedAt = new Date().toISOString();
+  persistWorkspace();
+  renderSchemeOptions();
+  refreshPlanStorageStatus(`方案已重新命名為「${scheme.name}」`);
+}
+
+function deleteSelectedScheme() {
+  const scheme = getSelectedScheme();
+  if (!scheme) return;
+  if (!window.confirm(`刪除「${scheme.name}」？此動作不會改變目前畫面。`)) return;
+  workspace.schemes = workspace.schemes.filter((item) => item.id !== scheme.id);
+  selectedSchemeId = ORIGINAL_SCHEME_ID;
+  persistWorkspace();
+  renderSchemeOptions();
+  refreshPlanStorageStatus(`已刪除「${scheme.name}」`);
+}
+
 function getPlanFilename(date = new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
   const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
-  return `phoenixes-288-column-plan-${stamp}.json`;
+  const schemeName = getSelectedScheme()?.name ?? "original";
+  const safeName = schemeName.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]+/g, "-").replace(/^-+|-+$/g, "") || "plan";
+  return `phoenixes-288-${safeName}-${stamp}.json`;
 }
 
 function exportPlan() {
@@ -1658,8 +3211,22 @@ async function importPlanFromFile(event) {
   if (!file) return;
   try {
     if (file.size > 512 * 1024) throw new Error("檔案超過 512KB");
-    const imported = applyPlanState(JSON.parse(await file.text()));
-    refreshPlanStorageStatus(`已匯入 ${file.name}，共 ${imported.columns.length} 根柱`);
+    if (workspace.schemes.length >= MAX_SCHEMES) throw new Error(`方案已達 ${MAX_SCHEMES} 組上限`);
+    const imported = normalizePlanState(JSON.parse(await file.text()));
+    const now = new Date().toISOString();
+    const scheme = {
+      id: createSchemeId("import"),
+      name: getUniqueSchemeName(file.name.replace(/\.json$/i, "")),
+      createdAt: now,
+      updatedAt: now,
+      plan: imported,
+    };
+    workspace.schemes.push(scheme);
+    selectedSchemeId = scheme.id;
+    persistWorkspace();
+    renderSchemeOptions();
+    applyPlanState(imported);
+    refreshPlanStorageStatus(`已匯入「${scheme.name}」，共 ${imported.columns.length} 根柱`);
   } catch (error) {
     refreshPlanStorageStatus(`匯入失敗：${error.message}`);
   } finally {
@@ -1668,27 +3235,133 @@ async function importPlanFromFile(event) {
 }
 
 function restoreOriginalPlan() {
-  const confirmed = window.confirm("恢復原始柱子位置與牆高？已儲存的本機草稿不會被刪除。");
+  const confirmed = window.confirm("恢復原始柱子位置與牆高？已儲存的命名方案不會被刪除。");
   if (!confirmed) return;
-  currentWallHeight = (data.defaults?.wallHeightCm ?? 200) / 100;
-  wallHeightInput.value = currentWallHeight.toFixed(2);
-  editableColumns = makeEditableColumns(data.columns);
-  selectedColumnId = editableColumns[0]?.__id ?? null;
-  updateWallHeightLabel();
-  syncColumnEditor();
-  rebuildWalls();
-  refreshPlanStorageStatus("已恢復原始，草稿仍保留");
+  performHistoryAction("恢復原始格局", () => applyPlanState(createOriginalPlanState(), { clearHistory: false }));
+  selectedSchemeId = ORIGINAL_SCHEME_ID;
+  renderSchemeOptions();
+  refreshPlanStorageStatus("已恢復原始格局；命名方案仍保留");
 }
 
-function updateSelectedColumnFromFields() {
-  const selected = getSelectedColumn();
+function planStateSignature(plan) {
+  const serializeCollection = (items) => items.map((item) => ({
+    id: item.id,
+    x: Number(item.x),
+    z: Number(item.z),
+    w: Number(item.w),
+    d: Number(item.d),
+    h: Number(item.h),
+    rot: Number(item.rot),
+    sillCm: item.sillCm == null ? undefined : Number(item.sillCm),
+    hingeAtStart: item.hingeAtStart,
+    swingSign: item.swingSign,
+    wallCategory: item.wallCategory,
+    furnitureType: item.furnitureType,
+    source: item.source,
+  }));
+  return JSON.stringify({
+    wallHeightM: Number(Number(plan.wallHeightM).toFixed(2)),
+    exteriorWallHeightM: Number(Number(plan.exteriorWallHeightM ?? plan.wallHeightM).toFixed(2)),
+    walls: serializeCollection(plan.walls),
+    lowWalls: serializeCollection(plan.lowWalls),
+    columns: serializeCollection(plan.columns),
+    doors: serializeCollection(plan.doors),
+    windows: serializeCollection(plan.windows),
+    furniture: serializeCollection(plan.furniture),
+  });
+}
+
+function planStatesMatch(a, b) {
+  return planStateSignature(normalizePlanState(a)) === planStateSignature(normalizePlanState(b));
+}
+
+function captureEditableState() {
+  return getCurrentPlanState();
+}
+
+function beginHistoryAction(label) {
+  if (pendingHistoryAction) return;
+  pendingHistoryAction = { label, before: captureEditableState() };
+}
+
+function commitHistoryAction() {
+  if (!pendingHistoryAction) return;
+  const action = pendingHistoryAction;
+  pendingHistoryAction = null;
+  const after = captureEditableState();
+  if (planStatesMatch(action.before, after)) {
+    updateHistoryButtons();
+    return;
+  }
+  undoStack.push({ label: action.label, state: action.before });
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack = [];
+  updateHistoryButtons();
+  refreshPlanStorageStatus();
+}
+
+function performHistoryAction(label, action) {
+  commitHistoryAction();
+  beginHistoryAction(label);
+  action();
+  commitHistoryAction();
+}
+
+function clearEditHistory() {
+  pendingHistoryAction = null;
+  undoStack = [];
+  redoStack = [];
+  updateHistoryButtons();
+}
+
+function updateHistoryButtons() {
+  const undoAction = undoStack.at(-1);
+  const redoAction = redoStack.at(-1);
+  if (undoEditButton) {
+    undoEditButton.disabled = !undoAction;
+    undoEditButton.title = undoAction ? `復原：${undoAction.label}` : "復原";
+    undoEditButton.setAttribute("aria-label", undoEditButton.title);
+  }
+  if (redoEditButton) {
+    redoEditButton.disabled = !redoAction;
+    redoEditButton.title = redoAction ? `重做：${redoAction.label}` : "重做";
+    redoEditButton.setAttribute("aria-label", redoEditButton.title);
+  }
+}
+
+function undoEdit() {
+  commitHistoryAction();
+  const action = undoStack.pop();
+  if (!action) return;
+  redoStack.push({ label: action.label, state: captureEditableState() });
+  applyPlanState(action.state, { clearHistory: false, preserveSelection: true });
+  updateHistoryButtons();
+  refreshPlanStorageStatus(`已復原：${action.label}`);
+}
+
+function redoEdit() {
+  commitHistoryAction();
+  const action = redoStack.pop();
+  if (!action) return;
+  undoStack.push({ label: action.label, state: captureEditableState() });
+  applyPlanState(action.state, { clearHistory: false, preserveSelection: true });
+  updateHistoryButtons();
+  refreshPlanStorageStatus(`已重做：${action.label}`);
+}
+
+function updateSelectedObjectFromFields() {
+  const selected = getSelectedEditableObject();
   if (!selected) return;
-  setColumnMetrics(selected, {
+  setEditableMetrics(selected, {
     x: Number(columnInputs.x.value),
     z: Number(columnInputs.z.value),
     w: Number(columnInputs.w.value),
     d: Number(columnInputs.d.value),
+    h: Number(objectHeightInput.value),
+    rot: Number(objectRotationInput.value),
+    sillCm: Number(objectVerticalInput?.value),
   });
+  if (selected.type === "furniture") rebuildFurniture();
   rebuildWalls();
 }
 
@@ -1699,10 +3372,17 @@ function setPointerFromEvent(event) {
   raycaster.setFromCamera(pointer, camera);
 }
 
-function getColumnHitFromEvent(event) {
-  if (!columnEditorOpen || !columnPickMeshes.length) return;
+function getObjectHitFromEvent(event) {
+  if (!columnEditorOpen || !objectPickMeshes.length) return null;
   setPointerFromEvent(event);
-  return raycaster.intersectObjects(columnPickMeshes, false)[0] ?? raycaster.intersectObjects(columnMeshes, false)[0];
+  const hits = raycaster.intersectObjects(objectPickMeshes, false);
+  if (!hits.length) return null;
+  const nearbyHits = hits.filter((hit) => hit.distance <= hits[0].distance + 0.4);
+  nearbyHits.sort((a, b) => {
+    const priorityDifference = Number(b.object.userData.pickPriority ?? 0) - Number(a.object.userData.pickPriority ?? 0);
+    return priorityDifference || a.distance - b.distance;
+  });
+  return nearbyHits[0];
 }
 
 function getPlanPointFromEvent(event) {
@@ -1712,48 +3392,87 @@ function getPlanPointFromEvent(event) {
   return toPlan(dragPoint.x, dragPoint.z);
 }
 
-function startColumnDrag(event) {
-  const hit = getColumnHitFromEvent(event);
-  if (!hit?.object?.userData?.columnId) return;
-  selectedColumnId = hit.object.userData.columnId;
-  const selected = getSelectedColumn();
+function startObjectInteraction(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const hit = getObjectHitFromEvent(event);
+  if (!hit?.object?.userData?.objectId) {
+    if (selectedObject) {
+      selectedObject = null;
+      selectedColumnId = null;
+      rebuildWalls();
+    }
+    return;
+  }
+
+  const objectId = hit.object.userData.objectId;
+  const descriptor = objectDescriptors.get(objectId);
+  if (!descriptor) return;
+  selectedObject = { id: objectId, type: descriptor.type };
+  selectedColumnId = descriptor.type === "column" ? objectId : null;
+
+  const selected = getSelectedEditableObject();
   const planPoint = getPlanPointFromEvent(event);
-  if (!selected || !planPoint) return;
-  const metrics = getColumnMetrics(selected);
-  dragColumnOffset = {
-    x: metrics.x - planPoint.x,
-    z: metrics.z - planPoint.z,
-  };
-  draggingColumnId = selectedColumnId;
-  controls.enabled = false;
-  canvas.setPointerCapture?.(event.pointerId);
-  event.preventDefault();
-  syncColumnEditor();
+  if (selected && planPoint) {
+    beginHistoryAction(`拖曳${descriptor.typeLabel}`);
+    const wallEndpoint = hit.object.userData.wallEndpoint;
+    if (selected.type === "wall" && wallEndpoint) {
+      const endpoints = getWallEndpoints(selected);
+      draggingObjectMode = `wall-${wallEndpoint}`;
+      fixedWallEndpoint = wallEndpoint === "start" ? endpoints.end : endpoints.start;
+      dragObjectOffset = { x: 0, z: 0 };
+    } else {
+      draggingObjectMode = "move";
+      fixedWallEndpoint = null;
+      dragObjectOffset = {
+        x: selected.x - planPoint.x,
+        z: selected.z - planPoint.z,
+      };
+    }
+    draggingObjectId = selected.id;
+    controls.enabled = false;
+    canvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
   rebuildWalls();
 }
 
-function dragSelectedColumn(event) {
-  if (!draggingColumnId) return;
-  const selected = getSelectedColumn();
+function dragSelectedObject(event) {
+  if (!draggingObjectId) return;
+  const selected = getEditableObjectById(draggingObjectId);
   const planPoint = getPlanPointFromEvent(event);
   if (!selected || !planPoint) return;
-  const metrics = getColumnMetrics(selected);
-  setColumnMetrics(selected, {
-    x: planPoint.x + dragColumnOffset.x,
-    z: planPoint.z + dragColumnOffset.z,
-    w: metrics.w,
-    d: metrics.d,
-  });
+  if (selected.type === "wall" && draggingObjectMode.startsWith("wall-") && fixedWallEndpoint) {
+    const movingPoint = snapWallEndpoint({ x: Math.round(planPoint.x), z: Math.round(planPoint.z) }, selected.id);
+    if (draggingObjectMode === "wall-start") setWallFromEndpoints(selected, movingPoint, fixedWallEndpoint);
+    else setWallFromEndpoints(selected, fixedWallEndpoint, movingPoint);
+    refreshOpeningWallLinks();
+  } else {
+    setEditableMetrics(selected, {
+      ...getEditableMetrics(selected),
+      x: planPoint.x + dragObjectOffset.x,
+      z: planPoint.z + dragObjectOffset.z,
+    });
+  }
+  if (selected.type === "furniture") rebuildFurniture();
   syncColumnEditor();
   rebuildWalls();
   event.preventDefault();
 }
 
-function endColumnDrag(event) {
-  if (!draggingColumnId) return;
-  draggingColumnId = null;
+function endObjectDrag(event) {
+  if (!draggingObjectId) return;
+  const dragged = getEditableObjectById(draggingObjectId);
+  if (dragged?.type === "wall" && draggingObjectMode.startsWith("wall-")) {
+    mergeTouchingCollinearWalls();
+    refreshOpeningWallLinks();
+    rebuildWalls();
+  }
+  draggingObjectId = null;
+  draggingObjectMode = "move";
+  fixedWallEndpoint = null;
   controls.enabled = true;
   canvas.releasePointerCapture?.(event.pointerId);
+  commitHistoryAction();
   updateStatus();
 }
 
@@ -1805,18 +3524,31 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function setCameraPreset(preset) {
+  const buildingTarget = toWorld(1377.5, 815);
+  const siteTarget = toWorld((bounds.x0 + bounds.x1) / 2, (bounds.z0 + bounds.z1) / 2);
   if (preset === "top") {
-    camera.position.set(0, 30, 0.01);
-    controls.target.set(0, officeElevation, 0);
+    camera.position.set(buildingTarget.x, 42, buildingTarget.z + 0.01);
+    controls.target.set(buildingTarget.x, officeElevation, buildingTarget.z);
   } else if (preset === "cad") {
-    camera.position.set(0, 38, 0.001);
-    controls.target.set(0, officeElevation, 0);
+    const verticalFov = (camera.fov * Math.PI) / 180;
+    const width = (bounds.x1 - bounds.x0 + 420) / 100;
+    const depth = (bounds.z1 - bounds.z0 + 420) / 100;
+    const heightForDepth = depth / (2 * Math.tan(verticalFov / 2));
+    const heightForWidth = width / (2 * Math.tan(verticalFov / 2) * Math.max(camera.aspect, 0.25));
+    const cameraHeight = Math.max(42, heightForDepth, heightForWidth) * 1.08;
+    camera.position.set(siteTarget.x, cameraHeight, siteTarget.z + 0.001);
+    controls.target.set(siteTarget.x, officeElevation, siteTarget.z);
   } else if (preset === "walk") {
-    camera.position.set(-5.4, 2.8, 4.5);
-    controls.target.set(2.4, officeElevation + 0.9, -0.5);
+    camera.position.set(buildingTarget.x - 5.4, 2.8, buildingTarget.z + 4.5);
+    controls.target.set(buildingTarget.x + 2.4, officeElevation + 0.9, buildingTarget.z - 0.5);
   } else {
-    camera.position.set(12.5, 13, 17);
-    controls.target.set(0.4, officeElevation + 0.2, 0.3);
+    const narrowScreenScale = camera.aspect < 0.75 ? Math.min(2.15, 0.9 / camera.aspect) : 1;
+    camera.position.set(
+      buildingTarget.x + 18.5 * narrowScreenScale,
+      18.5 * narrowScreenScale,
+      buildingTarget.z + 25.5 * narrowScreenScale,
+    );
+    controls.target.set(buildingTarget.x + 0.4, officeElevation + 0.2, buildingTarget.z + 0.3);
   }
   controls.update();
 }
@@ -1824,6 +3556,25 @@ function setCameraPreset(preset) {
 function updateStatus() {
   if (!data) return;
   updateWallHeightLabel();
+}
+
+function makeCadTextSprite(text) {
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = 480;
+  canvasEl.height = 96;
+  const ctx = canvasEl.getContext("2d");
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  ctx.fillStyle = "#111515";
+  ctx.font = '700 34px "Microsoft JhengHei", sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, canvasEl.width / 2, canvasEl.height / 2, canvasEl.width - 16);
+  const texture = new THREE.CanvasTexture(canvasEl);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false }));
+  sprite.scale.set(3, 0.6, 1);
+  sprite.renderOrder = 30;
+  return sprite;
 }
 
 function clearGroup(group) {
