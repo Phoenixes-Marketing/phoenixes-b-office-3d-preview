@@ -9,15 +9,18 @@ const canvas = document.querySelector("#scene");
 const planOpacity = document.querySelector("#planOpacity");
 const wallHeightInput = document.querySelector("#wallHeight");
 const exteriorWallHeightInput = document.querySelector("#exteriorWallHeight");
+const columnHeightInput = document.querySelector("#columnHeight");
 const wallHeightPanel = document.querySelector("#wallHeightPanel");
 const wallHeightValue = document.querySelector("#wallHeightValue");
 const exteriorWallHeightValue = document.querySelector("#exteriorWallHeightValue");
+const columnHeightValue = document.querySelector("#columnHeightValue");
 const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
 const toggleRoofButton = document.querySelector("#toggleRoof");
 const toggleDoorOpenButton = document.querySelector("#toggleDoorOpen");
+const toggleLabelsButton = document.querySelector("#toggleLabels");
 const togglePlanStorageButton = document.querySelector("#togglePlanStorage");
 const planStoragePanel = document.querySelector("#planStoragePanel");
 const closePlanStorageButton = document.querySelector("#closePlanStorage");
@@ -38,7 +41,9 @@ const columnHint = document.querySelector("#columnHint");
 const objectTypeOutput = document.querySelector("#objectType");
 const objectIdOutput = document.querySelector("#objectId");
 const objectHeightInput = document.querySelector("#objectHeight");
+const objectHeightField = document.querySelector("#objectHeightField");
 const objectRotationInput = document.querySelector("#objectRotation");
+const objectRotationField = document.querySelector("#objectRotationField");
 const objectVerticalField = document.querySelector("#objectVerticalField");
 const objectVerticalInput = document.querySelector("#objectVertical");
 const objectHeightLabel = document.querySelector("#objectHeightLabel");
@@ -61,6 +66,8 @@ const columnFieldLabels = {
   w: document.querySelector("#columnWLabel"),
   d: document.querySelector("#columnDLabel"),
 };
+const columnXField = document.querySelector("#columnXField");
+const columnZField = document.querySelector("#columnZField");
 const columnDField = document.querySelector("#columnDField");
 const objectEditorInputs = [...Object.values(columnInputs), objectHeightInput, objectRotationInput, objectVerticalInput];
 const deferredEditorInputs = new Set([columnInputs.w, columnInputs.d, objectHeightInput, objectVerticalInput]);
@@ -97,7 +104,7 @@ const dragPoint = new THREE.Vector3();
 const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
 const WORKSPACE_STORAGE_KEY = "phoenixes-b-office-3d-preview:workspace:v1";
 const PLAN_FORMAT = "phoenixes-office-column-plan";
-const PLAN_SCHEMA_VERSION = 5;
+const PLAN_SCHEMA_VERSION = 6;
 const WORKSPACE_FORMAT = "phoenixes-office-design-workspace";
 const WORKSPACE_SCHEMA_VERSION = 1;
 const ORIGINAL_SCHEME_ID = "original";
@@ -109,8 +116,15 @@ const STANDARD_DOOR_THICKNESS_CM = 5;
 const WALL_ENDPOINT_SNAP_CM = 20;
 const DEFAULT_WALL_THICKNESS_CM = 14;
 const DEFAULT_INTERIOR_WALL_HEIGHT_CM = 300;
-const DEFAULT_EXTERIOR_WALL_HEIGHT_CM = 500;
-const DEFAULT_COLUMN_HEIGHT_CM = 500;
+const DEFAULT_EXTERIOR_WALL_HEIGHT_CM = 560;
+const DEFAULT_COLUMN_HEIGHT_CM = 560;
+const ENTRANCE_EXTERIOR_WALL_SOURCES = new Set(["orange-6830", "orange-6832", "orange-6833"]);
+const ENTRANCE_DOOR_SOURCES = new Set(["door-arc-7424", "door-arc-7427"]);
+const REMOVED_WALL_SOURCES = new Set(["orange-ring-6814:0"]);
+const AUTOMATIC_DOOR_WIDTH_CM = 471;
+const AUTOMATIC_DOOR_HEIGHT_CM = 430;
+const WINDOW_FRAME_OVERHANG_CM = 6;
+const WINDOW_COLUMN_CLEARANCE_CM = 1;
 
 const root = new THREE.Group();
 scene.add(root);
@@ -134,9 +148,10 @@ const materials = {
   wallTop: new THREE.MeshStandardMaterial({ color: 0xd8b174, roughness: 0.62 }),
   exteriorWall: new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.84 }),
   exteriorWallTop: new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.84 }),
-  roof: new THREE.MeshStandardMaterial({ color: 0x657174, roughness: 0.5, metalness: 0.28, side: THREE.DoubleSide }),
-  roofSeam: new THREE.LineBasicMaterial({ color: 0x30383a, transparent: true, opacity: 0.62 }),
-  gable: new THREE.MeshStandardMaterial({ color: 0xb8c0be, roughness: 0.58, metalness: 0.14, side: THREE.DoubleSide }),
+  facadeTrim: new THREE.MeshStandardMaterial({ color: 0x20272a, roughness: 0.56, metalness: 0.22 }),
+  corrugatedWall: new THREE.MeshStandardMaterial({ color: 0x626b6f, roughness: 0.7, metalness: 0.2 }),
+  corrugatedRib: new THREE.MeshStandardMaterial({ color: 0x50585c, roughness: 0.62, metalness: 0.28 }),
+  roof: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 }),
   lowWall: new THREE.MeshPhysicalMaterial({
     color: 0x9ed0d0,
     roughness: 0.18,
@@ -216,8 +231,8 @@ function getStableConnectionMaterial(baseMaterial, key, units) {
   return stableConnectionMaterials.get(key);
 }
 
-function getStableWallMaterial(category, index) {
-  const key = `${category}-${index}`;
+function getStableWallMaterial(category, index, finish = category) {
+  const key = `${category}-${finish}-${index}`;
   if (!stableWallMaterials.has(key)) {
     const baseMaterial = category === "exterior" ? materials.exteriorWall : materials.wall;
     const material = baseMaterial.clone();
@@ -229,8 +244,8 @@ function getStableWallMaterial(category, index) {
   return stableWallMaterials.get(key);
 }
 
-function getStableWallTopMaterial(category, index) {
-  const key = `top-${category}-${index}`;
+function getStableWallTopMaterial(category, index, finish = category) {
+  const key = `top-${category}-${finish}-${index}`;
   if (!stableWallMaterials.has(key)) {
     const baseMaterial = category === "exterior" ? materials.exteriorWallTop : materials.wallTop;
     const material = baseMaterial.clone();
@@ -293,18 +308,59 @@ const DESIGN_ITEMS = [
   { type: "plant", x: 2070, z: 1535 },
 
   { type: "reception", x: 2385, z: 880, w: 310, d: 78, rot: 0 },
-  { type: "chair", x: 2305, z: 980, rot: 0 },
-  { type: "chair", x: 2465, z: 980, rot: 0 },
+  { type: "chair", x: 2305, z: 795, rot: 0 },
+  { type: "chair", x: 2465, z: 795, rot: 0 },
   { type: "plant", x: 2205, z: 1110 },
   { type: "plant", x: 2630, z: 1110 },
 ];
 
+const SOUTH_FACADE_WINDOW_BAYS = [
+  { label: "B-C", centerX: 1960, widths: [150, 150, 150], gap: 12 },
+  { label: "C-D", centerX: 1418, widths: [150, 150, 150], gap: 12 },
+  { label: "D-E", centerX: 869, widths: [150, 150, 150], gap: 12 },
+  { label: "E-F", centerX: 345, widths: [150, 108, 150], gap: 12 },
+];
+
+const EAST_FACADE_WINDOW_BAYS = [
+  { label: "5-4", centerZ: 290, widths: [150, 150, 150], gap: 12 },
+  { label: "4-3", centerZ: 885, widths: [150, 150, 150], gap: 12 },
+];
+
+function getCenteredStripItems(center, widths, gap = 0) {
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * gap;
+  let cursor = center - totalWidth / 2;
+  return widths.map((width) => {
+    const position = cursor + width / 2;
+    cursor += width + gap;
+    return { position, width };
+  });
+}
+
 const WINDOW_ITEMS = [
-  { source: "window-1", x: 2185, z: -18, w: 420, d: 8, h: 110, sillCm: 80, rot: 0 },
-  { source: "window-2", x: 2690, z: 350, w: 420, d: 8, h: 110, sillCm: 80, rot: 90 },
-  { source: "window-3", x: 2690, z: 960, w: 360, d: 8, h: 110, sillCm: 80, rot: 90 },
-  { source: "window-4", x: 1700, z: 1630, w: 520, d: 8, h: 110, sillCm: 80, rot: 0 },
-  { source: "window-5", x: 1010, z: 1630, w: 360, d: 8, h: 110, sillCm: 80, rot: 0 },
+  ...EAST_FACADE_WINDOW_BAYS.flatMap((bay) => getCenteredStripItems(bay.centerZ, bay.widths, bay.gap).map((pane, index) => ({
+    source: `東側 ${bay.label} 柱間落地窗 ${index + 1}`,
+    constructionSized: true,
+    x: 2755,
+    z: pane.position,
+    w: pane.width,
+    d: 14,
+    h: 560,
+    sillCm: 0,
+    rot: 90,
+  }))),
+  ...SOUTH_FACADE_WINDOW_BAYS.flatMap((bay) => getCenteredStripItems(bay.centerX, bay.widths, bay.gap).map((pane, index) => ({
+    source: `南側 ${bay.label} 柱間落地窗 ${index + 1}`,
+    constructionSized: true,
+    x: pane.position,
+    z: 1630,
+    w: pane.width,
+    d: 14,
+    h: 560,
+    sillCm: 0,
+    rot: 0,
+  }))),
+  { source: "西側廁所高窗 1", constructionSized: true, x: 0, z: 720, w: 80, d: 14, h: 60, sillCm: 175, rot: 90 },
+  { source: "西側廁所高窗 2", constructionSized: true, x: 0, z: 930, w: 80, d: 14, h: 60, sillCm: 175, rot: 90 },
 ];
 
 const AREA_LABELS = [
@@ -363,6 +419,7 @@ let baseFloor;
 let officeElevation = 0.6;
 let currentWallHeight = Number(wallHeightInput.value);
 let currentExteriorWallHeight = Number(exteriorWallHeightInput.value);
+let currentColumnHeight = Number(columnHeightInput.value);
 let wallHeightPanelOpen = false;
 let planStoragePanelOpen = false;
 let furnitureVisible = true;
@@ -374,6 +431,7 @@ let editableColumns = [];
 let editableDoors = [];
 let editableWindows = [];
 let editableFurniture = [];
+let editableRoof = null;
 let selectedColumnId = null;
 let columnMeshes = [];
 let columnPickMeshes = [];
@@ -383,8 +441,11 @@ let selectedObject = null;
 let nextColumnId = 1;
 let draggingObjectId = null;
 let draggingObjectMode = "move";
+let activeDragPlaneY = officeElevation;
 let fixedWallEndpoint = null;
 let dragObjectOffset = { x: 0, z: 0 };
+let roofResizeStart = null;
+let roofResizeStartClientY = 0;
 let workspace = createEmptyWorkspace();
 let selectedSchemeId = ORIGINAL_SCHEME_ID;
 let undoStack = [];
@@ -392,7 +453,8 @@ let redoStack = [];
 let pendingHistoryAction = null;
 let cadMode = false;
 let doorsOpen = true;
-let roofVisible = false;
+let roofVisible = true;
+let labelsVisible = false;
 const defaultBackground = new THREE.Color(0xe8ecef);
 const defaultFog = scene.fog;
 
@@ -410,15 +472,22 @@ async function init() {
   exteriorWallHeightInput.max = "6";
   exteriorWallHeightInput.step = "0.05";
   exteriorWallHeightInput.value = (DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100).toFixed(2);
+  columnHeightInput.min = "1.5";
+  columnHeightInput.max = "10";
+  columnHeightInput.step = "0.05";
+  columnHeightInput.value = (DEFAULT_COLUMN_HEIGHT_CM / 100).toFixed(2);
   currentWallHeight = Number(wallHeightInput.value);
   currentExteriorWallHeight = Number(exteriorWallHeightInput.value);
+  currentColumnHeight = Number(columnHeightInput.value);
   updateWallHeightLabel();
   bounds = getBounds(data);
   center = {
     x: (bounds.x0 + bounds.x1) / 2,
     z: (bounds.z0 + bounds.z1) / 2,
   };
+  editableRoof = createDefaultRoof();
   editableWalls = makeEditableFootprints(data.walls, "wall", DEFAULT_INTERIOR_WALL_HEIGHT_CM);
+  normalizeEntranceFacadeWall(editableWalls);
   assignWallCategories(editableWalls);
   applyWallCategoryHeights();
   normalizeAmbiguousToiletWallStubs(editableWalls);
@@ -442,6 +511,7 @@ async function init() {
 }
 
 function calibrateModelToConstruction(model) {
+  model.walls = (model.walls ?? []).filter((wall) => !REMOVED_WALL_SOURCES.has(wall.source));
   const scaleX = CONSTRUCTION_PLAN.building.x1 / CONSTRUCTION_PLAN.sourceBuilding.width;
   const scaleZ = CONSTRUCTION_PLAN.building.z1 / CONSTRUCTION_PLAN.sourceBuilding.depth;
   const scaleRect = (item) => {
@@ -474,6 +544,7 @@ function calibrateModelToConstruction(model) {
   AREA_LABELS.forEach(scaleRect);
   scaleRect(HUMAN_SCALE);
   WINDOW_ITEMS.forEach((item) => {
+    if (item.constructionSized) return;
     const angle = ((item.rot ?? 0) * Math.PI) / 180;
     const alongScale = Math.hypot(Math.cos(angle) * scaleX, Math.sin(angle) * scaleZ);
     const normalScale = Math.hypot(Math.sin(angle) * scaleX, Math.cos(angle) * scaleZ);
@@ -515,6 +586,7 @@ function calibrateModelToConstruction(model) {
   AREA_LABELS.forEach(fitRect);
   fitRect(HUMAN_SCALE);
   WINDOW_ITEMS.forEach((item) => {
+    if (item.constructionSized) return;
     const angle = ((item.rot ?? 0) * Math.PI) / 180;
     const alongScale = Math.hypot(Math.cos(angle) * fitScaleX, Math.sin(angle) * fitScaleZ);
     const normalScale = Math.hypot(Math.sin(angle) * fitScaleX, Math.cos(angle) * fitScaleZ);
@@ -531,7 +603,23 @@ function calibrateModelToConstruction(model) {
     { kind: "entry-porch", shape: "rect", x0: 2150, z0: 1420, x1: 2755, z1: 1630, heightCm: CONSTRUCTION_PLAN.levels.porch, label: "+30" },
     { kind: "entry-threshold", shape: "rect", x0: 2150, z0: 1385, x1: 2755, z1: 1420, heightCm: CONSTRUCTION_PLAN.levels.threshold, label: "+35" },
   ];
+  ensureConstructionColumns(model);
   model.levels = { ...(model.levels ?? {}), officeCm: CONSTRUCTION_PLAN.levels.office };
+}
+
+function ensureConstructionColumns(model) {
+  const source = "施工圖第2頁 A-4 補柱";
+  if ((model.columns ?? []).some((column) => column.source === source)) return;
+  model.columns ??= [];
+  model.columns.push({
+    kind: "column",
+    shape: "rect",
+    x0: CONSTRUCTION_PLAN.building.x1 - 25,
+    x1: CONSTRUCTION_PLAN.building.x1 + 25,
+    z0: CONSTRUCTION_PLAN.axesZ.find((axis) => axis.label === "4").value - 25,
+    z1: CONSTRUCTION_PLAN.axesZ.find((axis) => axis.label === "4").value + 25,
+    source,
+  });
 }
 
 function getBounds(model) {
@@ -579,6 +667,7 @@ function makeEditableFootprints(items, type, defaultHeightCm) {
 
 function inferWallCategory(wall) {
   if (wall.wallCategory === "exterior" || wall.wallCategory === "interior") return wall.wallCategory;
+  if (ENTRANCE_EXTERIOR_WALL_SOURCES.has(wall.source)) return "exterior";
   const axis = getWallAxis(wall);
   const tolerance = Math.max(35, Number(wall.d ?? DEFAULT_WALL_THICKNESS_CM) * 2.5);
   const isHorizontal = Math.abs(axis.x) >= 0.98;
@@ -588,6 +677,15 @@ function inferWallCategory(wall) {
   const onVerticalBoundary = Math.abs(wall.x - CONSTRUCTION_PLAN.building.x0) <= tolerance
     || Math.abs(wall.x - CONSTRUCTION_PLAN.building.x1) <= tolerance;
   return (isHorizontal && onHorizontalBoundary) || (isVertical && onVerticalBoundary) ? "exterior" : "interior";
+}
+
+function inferWallFinish(wall) {
+  if (inferWallCategory(wall) !== "exterior") return "interior";
+  const axis = getWallAxis(wall);
+  const tolerance = Math.max(35, Number(wall.d ?? DEFAULT_WALL_THICKNESS_CM) * 2.5);
+  const isVertical = Math.abs(axis.z) >= 0.98;
+  if (isVertical && Math.abs(wall.x - CONSTRUCTION_PLAN.building.x0) <= tolerance) return "corrugated";
+  return "exterior";
 }
 
 function assignWallCategories(walls = editableWalls) {
@@ -610,8 +708,27 @@ function normalizeAmbiguousToiletWallStubs(walls) {
   if (sideDoorStub) sideDoorStub.rot = 0;
 }
 
+function normalizeEntranceFacadeWall(walls) {
+  const facadePieces = walls.filter((wall) => ["orange-6832", "orange-6833"].includes(wall.source));
+  const sideWall = walls.find((wall) => wall.source === "orange-6830");
+  if (sideWall) sideWall.wallCategory = "exterior";
+  if (facadePieces.length !== 2) return walls;
+
+  const [target, redundant] = facadePieces;
+  const x0 = Math.min(...facadePieces.map((wall) => wall.x - wall.w / 2));
+  const x1 = Math.max(...facadePieces.map((wall) => wall.x + wall.w / 2));
+  const z = facadePieces.reduce((sum, wall) => sum + wall.z, 0) / facadePieces.length;
+  setWallFromEndpoints(target, { x: x0, z }, { x: x1, z });
+  target.d = Math.max(...facadePieces.map((wall) => wall.d));
+  target.source = "入口大門外牆";
+  target.wallCategory = "exterior";
+  const redundantIndex = walls.indexOf(redundant);
+  if (redundantIndex >= 0) walls.splice(redundantIndex, 1);
+  return walls;
+}
+
 function makeEditableDoors(doors, sills) {
-  return doors.map((door, index) => {
+  const editable = doors.map((door, index) => {
     const sill = sills[index];
     const fallbackRadius = Number(door.radiusCm ?? Math.hypot(door.endA.x - door.hinge.x, door.endA.z - door.hinge.z));
     let metrics;
@@ -665,6 +782,30 @@ function makeEditableDoors(doors, sills) {
       source: typeof door.source === "string" ? door.source : `door-${index + 1}`,
     };
   });
+  return replaceEntranceDoorsWithAutomaticDoor(editable);
+}
+
+function replaceEntranceDoorsWithAutomaticDoor(doors) {
+  const entranceDoors = doors.filter((door) => ENTRANCE_DOOR_SOURCES.has(door.source));
+  if (entranceDoors.length !== 2) return doors;
+  const [first] = entranceDoors;
+  const automaticDoor = {
+    ...first,
+    id: "door-entrance-automatic",
+    __id: "door-entrance-automatic",
+    x: entranceDoors.reduce((sum, door) => sum + door.x, 0) / entranceDoors.length,
+    z: entranceDoors.reduce((sum, door) => sum + door.z, 0) / entranceDoors.length,
+    w: AUTOMATIC_DOOR_WIDTH_CM,
+    d: STANDARD_DOOR_THICKNESS_CM,
+    h: AUTOMATIC_DOOR_HEIGHT_CM,
+    rot: 0,
+    doorStyle: "automatic",
+    source: "圖1 入口自動門 471x430cm（上窗130cm）",
+  };
+  const insertionIndex = doors.findIndex((door) => ENTRANCE_DOOR_SOURCES.has(door.source));
+  const remaining = doors.filter((door) => !ENTRANCE_DOOR_SOURCES.has(door.source));
+  remaining.splice(Math.max(0, insertionIndex), 0, automaticDoor);
+  return remaining;
 }
 
 function makeEditableWindows(items) {
@@ -764,10 +905,12 @@ function setPlanStoragePanelOpen(open) {
 function updateWallHeightLabel() {
   const interiorLabel = `${currentWallHeight.toFixed(2)}m`;
   const exteriorLabel = `${currentExteriorWallHeight.toFixed(2)}m`;
+  const columnLabel = `${currentColumnHeight.toFixed(2)}m`;
   if (wallHeightValue) wallHeightValue.textContent = interiorLabel;
   if (exteriorWallHeightValue) exteriorWallHeightValue.textContent = exteriorLabel;
-  toggleWallHeightButton?.setAttribute("title", `外牆 ${exteriorLabel}／隔間 ${interiorLabel}`);
-  toggleWallHeightButton?.setAttribute("aria-label", `外牆 ${exteriorLabel}／隔間 ${interiorLabel}`);
+  if (columnHeightValue) columnHeightValue.textContent = columnLabel;
+  toggleWallHeightButton?.setAttribute("title", `外牆 ${exteriorLabel}／隔間 ${interiorLabel}／柱子 ${columnLabel}`);
+  toggleWallHeightButton?.setAttribute("aria-label", `外牆 ${exteriorLabel}／隔間 ${interiorLabel}／柱子 ${columnLabel}`);
 }
 
 function setColumnEditorCollapsed(collapsed) {
@@ -817,8 +960,14 @@ function bindControls() {
   });
   toggleRoofButton?.addEventListener("click", () => {
     roofVisible = !roofVisible;
-    roofGroup.visible = roofVisible && !cadMode;
     toggleRoofButton.classList.toggle("is-active", roofVisible);
+    toggleRoofButton.setAttribute("aria-pressed", String(roofVisible));
+    toggleRoofButton.setAttribute("title", roofVisible ? "隱藏平屋頂" : "顯示平屋頂");
+    toggleRoofButton.setAttribute("aria-label", roofVisible ? "隱藏平屋頂" : "顯示平屋頂");
+    if (!roofVisible && selectedObject?.type === "roof") {
+      selectedObject = null;
+    }
+    rebuildWalls();
   });
   toggleDoorOpenButton?.addEventListener("click", () => {
     doorsOpen = !doorsOpen;
@@ -831,6 +980,7 @@ function bindControls() {
     furnitureVisible = !furnitureVisible;
     furnitureGroup.visible = furnitureVisible && !cadMode;
     toggleFurnitureButton.classList.toggle("is-active", furnitureVisible);
+    toggleFurnitureButton.setAttribute("aria-pressed", String(furnitureVisible));
     toggleFurnitureButton.setAttribute("aria-label", furnitureVisible ? "隱藏家具" : "顯示家具");
     rebuildWalls();
     updateStatus();
@@ -842,10 +992,13 @@ function bindControls() {
     planMesh.visible = !planMesh.visible;
     event.currentTarget.classList.toggle("is-active", planMesh.visible);
   });
-  document.querySelector("#toggleLabels").addEventListener("click", (event) => {
-    labelGroup.visible = !labelGroup.visible;
-    event.currentTarget.classList.toggle("is-active", labelGroup.visible);
-    if (cadMode) labelGroup.visible = false;
+  toggleLabelsButton?.addEventListener("click", () => {
+    labelsVisible = !labelsVisible;
+    labelGroup.visible = labelsVisible && !cadMode;
+    toggleLabelsButton.classList.toggle("is-active", labelsVisible);
+    toggleLabelsButton.setAttribute("aria-pressed", String(labelsVisible));
+    toggleLabelsButton.setAttribute("title", labelsVisible ? "隱藏空間標籤" : "顯示空間標籤");
+    toggleLabelsButton.setAttribute("aria-label", labelsVisible ? "隱藏空間標籤" : "顯示空間標籤");
   });
   planOpacity?.addEventListener("input", () => {
     if (planMesh) planMesh.material.opacity = Number(planOpacity.value);
@@ -868,13 +1021,24 @@ function bindControls() {
     updateWallHeightLabel();
     rebuildWalls();
   });
+  columnHeightInput.addEventListener("input", () => {
+    currentColumnHeight = Number(columnHeightInput.value);
+    const heightCm = Math.round(currentColumnHeight * 100);
+    editableColumns.forEach((column) => {
+      column.h = heightCm;
+    });
+    updateWallHeightLabel();
+    rebuildWalls();
+  });
   ["pointerdown", "focus"].forEach((eventName) => {
     wallHeightInput.addEventListener(eventName, () => beginHistoryAction("調整牆高"));
     exteriorWallHeightInput.addEventListener(eventName, () => beginHistoryAction("調整外牆高度"));
+    columnHeightInput.addEventListener(eventName, () => beginHistoryAction("調整全部柱子高度"));
   });
   ["change", "blur"].forEach((eventName) => {
     wallHeightInput.addEventListener(eventName, commitHistoryAction);
     exteriorWallHeightInput.addEventListener(eventName, commitHistoryAction);
+    columnHeightInput.addEventListener(eventName, commitHistoryAction);
   });
   addObjectButton?.addEventListener("click", () => {
     const type = addObjectTypeSelect?.value ?? "wall";
@@ -952,6 +1116,7 @@ function buildScene() {
   rebuildWalls();
   addFixtures();
   addLabels();
+  labelGroup.visible = labelsVisible;
   updateStatus();
 }
 
@@ -1102,14 +1267,15 @@ function rebuildWalls() {
   editableWalls.forEach((item, index) => {
     const category = inferWallCategory(item);
     item.wallCategory = category;
+    item.wallFinish = inferWallFinish(item);
     item.__renderIndex = index;
-    addEditableWall(item, getWallOpenings(item), getStableWallMaterial(category, index));
+    addEditableWall(item, getWallOpenings(item), getStableWallMaterial(category, index, item.wallFinish));
     const wallLabel = category === "exterior" ? "外牆" : "隔間牆";
     registerEditableObject(item, index, wallLabel, { x: "X cm", z: "Z cm", w: "長 cm", d: "厚 cm" }, 1);
   });
   editableLowWalls.forEach((item, index) => {
     const material = getStableConnectionMaterial(materials.lowWall, `low-wall-${item.id}`, -(80 + index));
-    addEditableWall(item, [], material);
+    addEditableWall(item, getColumnWallCuts(item), material);
     registerEditableObject(item, index, "矮牆", { x: "X cm", z: "Z cm", w: "長 cm", d: "厚 cm" }, 2);
   });
   editableColumns.forEach((item, index) => {
@@ -1119,12 +1285,13 @@ function rebuildWalls() {
       `column-${item.id}-${selected ? "selected" : "normal"}`,
       -(160 + index),
     );
-    const mesh = addEditableSolid(item, material);
+    const mesh = addEditableSolid(getColumnRenderItem(item), material);
     mesh.userData.columnId = item.__id;
     mesh.userData.isEditableColumn = true;
     columnMeshes.push(mesh);
     registerEditableObject(item, index, "柱子", { x: "X cm", z: "Z cm", w: "寬 cm", d: "深 cm" }, 3);
   });
+  addWestCorrugatedCladding();
   editableDoors.forEach((item, index) => {
     addDoor(item, wallGroup, index);
     addEditableDoorSill(item, index);
@@ -1143,75 +1310,64 @@ function rebuildWalls() {
   rebuildRoofPreview();
   addSelectedObjectOutline();
   addSelectedWallEndpointHandles();
+  addSelectedRoofResizeHandles();
   rebuildCadPlan();
   updateStatus();
   if (columnEditorOpen) syncColumnEditor();
 }
 
-function createShellSurface(points, indices, material) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flatMap((point) => [point.x, point.y, point.z]), 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
 function rebuildRoofPreview() {
   clearGroup(roofGroup);
-  const { building } = CONSTRUCTION_PLAN;
-  const centerPoint = toWorld((building.x0 + building.x1) / 2, (building.z0 + building.z1) / 2);
-  const width = (building.x1 - building.x0) / 100;
-  const overhangCm = 30;
-  const ridgeRise = 1.75;
-  const eaveY = officeElevation + currentExteriorWallHeight;
-  const ridgeY = eaveY + ridgeRise;
-  const x0 = toWorld(building.x0 - overhangCm, 0).x;
-  const x1 = toWorld(building.x1 + overhangCm, 0).x;
-  const z0 = toWorld(0, building.z0 - overhangCm).z;
-  const z1 = toWorld(0, building.z1 + overhangCm).z;
-  const ridgeZ = toWorld(0, (building.z0 + building.z1) / 2).z;
-  roofGroup.add(createShellSurface([
-    { x: x0, y: eaveY, z: z0 },
-    { x: x1, y: eaveY, z: z0 },
-    { x: x1, y: ridgeY, z: ridgeZ },
-    { x: x0, y: ridgeY, z: ridgeZ },
-  ], [0, 1, 2, 0, 2, 3], materials.roof));
-  roofGroup.add(createShellSurface([
-    { x: x0, y: ridgeY, z: ridgeZ },
-    { x: x1, y: ridgeY, z: ridgeZ },
-    { x: x1, y: eaveY, z: z1 },
-    { x: x0, y: eaveY, z: z1 },
-  ], [0, 1, 2, 0, 2, 3], materials.roof));
-
-  const gableX0 = toWorld(building.x0, 0).x;
-  const gableX1 = toWorld(building.x1, 0).x;
-  [gableX0, gableX1].forEach((gableX, index) => {
-    roofGroup.add(createShellSurface([
-      { x: gableX, y: eaveY, z: toWorld(0, building.z0).z },
-      { x: gableX, y: eaveY, z: toWorld(0, building.z1).z },
-      { x: gableX, y: ridgeY, z: ridgeZ },
-    ], index === 0 ? [0, 1, 2] : [0, 2, 1], materials.gable));
-  });
-
-  const roofSeamPoints = [];
-  for (let x = building.x0 - overhangCm; x <= building.x1 + overhangCm; x += 100) {
-    const worldX = toWorld(x, 0).x;
-    roofSeamPoints.push(
-      new THREE.Vector3(worldX, eaveY + 0.015, z0),
-      new THREE.Vector3(worldX, ridgeY + 0.015, ridgeZ),
-      new THREE.Vector3(worldX, ridgeY + 0.015, ridgeZ),
-      new THREE.Vector3(worldX, eaveY + 0.015, z1),
+  if (!editableRoof) return;
+  const position = toWorld(editableRoof.x, editableRoof.z);
+  const height = editableRoof.h / 100;
+  const baseY = getRoofBaseY();
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(editableRoof.w / 100, height, editableRoof.d / 100),
+    materials.roof,
+  );
+  mesh.position.set(position.x, baseY + height / 2, position.z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  roofGroup.add(mesh);
+  roofGroup.visible = roofVisible && !cadMode;
+  if (roofVisible && !cadMode) {
+    registerEditableObject(
+      editableRoof,
+      0,
+      "屋頂",
+      { x: "X cm", z: "Z cm", w: "長 cm", d: "寬 cm" },
+      8,
+      null,
+      baseY,
     );
   }
-  roofGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(roofSeamPoints), materials.roofSeam));
-  const ridgeCap = new THREE.Mesh(new THREE.BoxGeometry(width + 0.6, 0.12, 0.14), materials.roof);
-  ridgeCap.position.set(centerPoint.x, ridgeY + 0.035, ridgeZ);
-  roofGroup.add(ridgeCap);
+}
 
-  roofGroup.visible = roofVisible && !cadMode;
+function createDefaultRoof() {
+  const { building } = CONSTRUCTION_PLAN;
+  const overhangCm = 45;
+  return {
+    id: "roof-main",
+    __id: "roof-main",
+    type: "roof",
+    kind: "roof",
+    x: Math.round((building.x0 + building.x1) / 2),
+    z: Math.round((building.z0 + building.z1) / 2),
+    w: Math.round(building.x1 - building.x0 + overhangCm * 2),
+    d: Math.round(building.z1 - building.z0 + overhangCm * 2),
+    h: 250,
+    rot: 0,
+    source: "純白平屋頂",
+  };
+}
+
+function getRoofBaseY() {
+  const exteriorWallHeights = editableWalls
+    .filter((wall) => inferWallCategory(wall) === "exterior")
+    .map((wall) => Number(wall.h) || 0);
+  const highestExteriorWallCm = Math.max(currentExteriorWallHeight * 100, ...exteriorWallHeights);
+  return officeElevation + highestExteriorWallCm / 100 + 0.025;
 }
 
 function registerEditableObject(item, index, typeLabel, fieldLabels, priority, linkedWall = null, baseY = officeElevation) {
@@ -1238,6 +1394,7 @@ function getEditableMetrics(item) {
 }
 
 function getEditableCollection(type) {
+  if (type === "roof") return editableRoof ? [editableRoof] : [];
   if (type === "wall") return editableWalls;
   if (type === "low-wall") return editableLowWalls;
   if (type === "column") return editableColumns;
@@ -1249,7 +1406,7 @@ function getEditableCollection(type) {
 
 function getEditableObjectById(id, type = null) {
   if (type) return getEditableCollection(type).find((item) => item.id === id) ?? null;
-  return [editableWalls, editableLowWalls, editableColumns, editableDoors, editableWindows, editableFurniture]
+  return [[editableRoof].filter(Boolean), editableWalls, editableLowWalls, editableColumns, editableDoors, editableWindows, editableFurniture]
     .flat()
     .find((item) => item.id === id) ?? null;
 }
@@ -1260,23 +1417,31 @@ function getSelectedEditableObject() {
 
 function setEditableMetrics(item, metrics) {
   const minimumWidth = item.type === "window" ? 1 : item.type === "door" ? 40 : 10;
-  const minimumDepth = item.type === "column" ? 10 : 3;
-  const minimumHeight = item.type === "door" ? 150 : item.type === "window" ? 30 : 10;
+  const minimumDepth = ["column", "roof"].includes(item.type) ? 10 : 3;
+  const minimumHeight = item.type === "door" ? 150 : item.type === "window" ? 30 : item.type === "roof" ? 5 : 10;
   const previousWall = item.type === "wall" ? { x: item.x, z: item.z, rot: item.rot ?? 0 } : null;
   const attachedOpenings = previousWall
     ? [...editableDoors, ...editableWindows]
       .filter((opening) => opening.wallId === item.id)
       .map((opening) => ({ opening, along: getOpeningAlongWall(opening, previousWall) }))
     : [];
-  item.x = Math.round(Number.isFinite(Number(metrics.x)) ? Number(metrics.x) : item.x);
-  item.z = Math.round(Number.isFinite(Number(metrics.z)) ? Number(metrics.z) : item.z);
+  const roofCenterX = (CONSTRUCTION_PLAN.building.x0 + CONSTRUCTION_PLAN.building.x1) / 2;
+  const roofCenterZ = (CONSTRUCTION_PLAN.building.z0 + CONSTRUCTION_PLAN.building.z1) / 2;
+  item.x = item.type === "roof"
+    ? Math.round(roofCenterX)
+    : Math.round(Number.isFinite(Number(metrics.x)) ? Number(metrics.x) : item.x);
+  item.z = item.type === "roof"
+    ? Math.round(roofCenterZ)
+    : Math.round(Number.isFinite(Number(metrics.z)) ? Number(metrics.z) : item.z);
   item.w = Math.round(Math.max(Number(metrics.w) || item.w, minimumWidth));
   if (!["door", "window"].includes(item.type)) {
     item.d = Math.round(Math.max(Number(metrics.d) || item.d, minimumDepth));
   }
   const maximumHeight = item.type === "column" ? 1000 : item.type === "wall" ? 600 : 500;
   item.h = Math.round(Math.min(maximumHeight, Math.max(Number(metrics.h) || item.h, minimumHeight)));
-  item.rot = normalizeAngle(Math.round(Number.isFinite(Number(metrics.rot)) ? Number(metrics.rot) : item.rot ?? 0));
+  item.rot = item.type === "roof"
+    ? 0
+    : normalizeAngle(Math.round(Number.isFinite(Number(metrics.rot)) ? Number(metrics.rot) : item.rot ?? 0));
   if (item.type === "window" && Number.isFinite(Number(metrics.sillCm))) item.sillCm = Math.max(0, Math.round(Number(metrics.sillCm)));
   if (item.type === "door" || item.type === "window") updateOpeningWallLink(item);
   if (item.type === "wall") {
@@ -1533,6 +1698,63 @@ function snapOpeningToWall(item, wall) {
   item.rot = normalizeAngle(Math.round(wall.rot ?? 0));
   item.d = Math.max(1, Math.round(wall.d));
   item.wallId = wall.id;
+  if (item.type === "window") constrainWindowToWallBay(item, wall);
+}
+
+function constrainWindowToWallBay(item, wall) {
+  const wallAngle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const wallAxis = { x: Math.cos(wallAngle), z: Math.sin(wallAngle) };
+  const desiredAlong = (item.x - wall.x) * wallAxis.x + (item.z - wall.z) * wallAxis.z;
+  const wallHalfWidth = wall.w / 2;
+  const columnBlocks = editableColumns
+    .map((column) => getColumnProjectionOnWall(wall, column))
+    .filter(Boolean)
+    .map((interval) => ({
+      start: Math.max(-wallHalfWidth, interval.start - WINDOW_COLUMN_CLEARANCE_CM),
+      end: Math.min(wallHalfWidth, interval.end + WINDOW_COLUMN_CLEARANCE_CM),
+    }));
+  const itemBottom = Number(item.sillCm ?? 0);
+  const itemTop = itemBottom + Number(item.h ?? 0);
+  const windowBlocks = editableWindows
+    .filter((other) => other.id !== item.id && other.wallId === wall.id)
+    .filter((other) => {
+      const otherBottom = Number(other.sillCm ?? 0);
+      const otherTop = otherBottom + Number(other.h ?? 0);
+      return itemBottom < otherTop && itemTop > otherBottom;
+    })
+    .map((other) => {
+      const otherAlong = (other.x - wall.x) * wallAxis.x + (other.z - wall.z) * wallAxis.z;
+      const halfFootprint = other.w / 2 + WINDOW_FRAME_OVERHANG_CM;
+      return { start: otherAlong - halfFootprint, end: otherAlong + halfFootprint };
+    });
+  const blocked = [...columnBlocks, ...windowBlocks]
+    .filter((interval) => interval.end > -wallHalfWidth && interval.start < wallHalfWidth)
+    .sort((a, b) => a.start - b.start);
+
+  const freeIntervals = [];
+  let cursor = -wallHalfWidth;
+  for (const interval of blocked) {
+    if (interval.start > cursor) freeIntervals.push({ start: cursor, end: interval.start });
+    cursor = Math.max(cursor, interval.end);
+  }
+  if (cursor < wallHalfWidth) freeIntervals.push({ start: cursor, end: wallHalfWidth });
+  if (!freeIntervals.length) return;
+
+  const edgeAllowance = WINDOW_FRAME_OVERHANG_CM;
+  const candidates = freeIntervals.flatMap((interval) => {
+    const maximumWidth = Math.floor(interval.end - interval.start - edgeAllowance * 2);
+    if (maximumWidth < 1) return [];
+    const width = Math.min(item.w, maximumWidth);
+    const halfFootprint = width / 2 + edgeAllowance;
+    const center = Math.max(interval.start + halfFootprint, Math.min(interval.end - halfFootprint, desiredAlong));
+    return [{ center, width, distance: Math.abs(center - desiredAlong) }];
+  });
+  if (!candidates.length) return;
+  candidates.sort((a, b) => a.distance - b.distance || b.width - a.width);
+  const target = candidates[0];
+  item.w = Math.max(1, Math.round(target.width));
+  item.x = Math.round(wall.x + wallAxis.x * target.center);
+  item.z = Math.round(wall.z + wallAxis.z * target.center);
 }
 
 function clampWindowVertical(item, wall) {
@@ -1560,9 +1782,15 @@ function updateOpeningWallLink(item, { preferLinkedWall = false, walls = editabl
 
 function refreshOpeningWallLinks(walls = editableWalls, doors = editableDoors, windows = editableWindows) {
   [...doors, ...windows].forEach((item) => updateOpeningWallLink(item, { preferLinkedWall: true, walls }));
+  windows.forEach((item) => {
+    const wall = findWallReferenceById(item.wallId, walls)?.item;
+    if (!wall) return;
+    constrainWindowToWallBay(item, wall);
+    clampWindowVertical(item, wall);
+  });
 }
 
-function getWallOpenings(wall) {
+function getArchitecturalWallOpenings(wall) {
   const angle = ((wall.rot ?? 0) * Math.PI) / 180;
   const axisX = Math.cos(angle);
   const axisZ = Math.sin(angle);
@@ -1578,14 +1806,56 @@ function getWallOpenings(wall) {
         bottom: item.type === "window" ? Math.max(0, item.sillCm - clearance) : 0,
         top: (item.type === "window" ? item.sillCm : 0) + item.h + clearance,
       };
-    })
+    });
+}
+
+function getWallOpenings(wall) {
+  return [...getArchitecturalWallOpenings(wall), ...getColumnWallCuts(wall)]
     .filter((opening) => opening.end > -wall.w / 2 && opening.start < wall.w / 2)
     .sort((a, b) => a.start - b.start);
 }
 
+function getColumnWallCuts(wall) {
+  const seamCoverCm = 0.5;
+
+  return editableColumns.flatMap((column) => {
+    const interval = getColumnProjectionOnWall(wall, column);
+    if (!interval) return [];
+    return [{
+      id: `column-cut-${column.id}`,
+      start: interval.start + seamCoverCm,
+      end: interval.end - seamCoverCm,
+      bottom: 0,
+      top: Math.min(Number(column.h) || 0, Number(wall.h) || 0),
+    }];
+  });
+}
+
+function getColumnProjectionOnWall(wall, column) {
+  const wallAngle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const wallAxis = { x: Math.cos(wallAngle), z: Math.sin(wallAngle) };
+  const wallNormal = { x: -wallAxis.z, z: wallAxis.x };
+  const wallHalfDepth = Math.max(Number(wall.d ?? DEFAULT_WALL_THICKNESS_CM) / 2, 2);
+  const columnAngle = ((column.rot ?? 0) * Math.PI) / 180;
+  const columnAxis = { x: Math.cos(columnAngle), z: Math.sin(columnAngle) };
+  const columnNormal = { x: -columnAxis.z, z: columnAxis.x };
+  const halfWidth = Math.max(Number(column.w) / 2, 1);
+  const halfDepth = Math.max(Number(column.d) / 2, 1);
+  const extentAlong = Math.abs(wallAxis.x * columnAxis.x + wallAxis.z * columnAxis.z) * halfWidth
+    + Math.abs(wallAxis.x * columnNormal.x + wallAxis.z * columnNormal.z) * halfDepth;
+  const extentNormal = Math.abs(wallNormal.x * columnAxis.x + wallNormal.z * columnAxis.z) * halfWidth
+    + Math.abs(wallNormal.x * columnNormal.x + wallNormal.z * columnNormal.z) * halfDepth;
+  const delta = { x: column.x - wall.x, z: column.z - wall.z };
+  const normalDistance = Math.abs(delta.x * wallNormal.x + delta.z * wallNormal.z);
+  if (normalDistance > wallHalfDepth + extentNormal + 0.5) return null;
+  const along = delta.x * wallAxis.x + delta.z * wallAxis.z;
+  return { start: along - extentAlong, end: along + extentAlong };
+}
+
 function addEditableWall(wall, openings, material) {
+  const seamOverlapCm = ["wall", "cladding"].includes(wall.type) ? 0.8 : 0;
   if (!openings.length) {
-    addEditableSolid(wall, material, 0, wall.h, true);
+    addEditableSolid({ ...wall, w: wall.w + seamOverlapCm }, material, 0, wall.h, true);
     return;
   }
   let cursor = -wall.w / 2;
@@ -1605,11 +1875,12 @@ function addEditableWall(wall, openings, material) {
 
 function addWallPiece(wall, alongCenterCm, lengthCm, baseCm, heightCm, material, cap) {
   const angle = ((wall.rot ?? 0) * Math.PI) / 180;
+  const seamOverlapCm = ["wall", "cladding"].includes(wall.type) ? 0.8 : 0;
   return addEditableSolid({
     ...wall,
     x: wall.x + Math.cos(angle) * alongCenterCm,
     z: wall.z + Math.sin(angle) * alongCenterCm,
-    w: lengthCm,
+    w: lengthCm + seamOverlapCm,
     h: heightCm,
   }, material, baseCm, heightCm, cap);
 }
@@ -1624,7 +1895,7 @@ function addEditableSolid(item, material, baseCm = 0, heightCm = item.h, cap = f
   mesh.receiveShadow = true;
   wallGroup.add(mesh);
   if (cap && item.type === "wall") {
-    const capMaterial = getStableWallTopMaterial(item.wallCategory, item.__renderIndex ?? 0);
+    const capMaterial = getStableWallTopMaterial(item.wallCategory, item.__renderIndex ?? 0, item.wallFinish);
     const capMesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(item.w / 100, 0.02), 0.035, Math.max(item.d / 100, 0.02)), capMaterial);
     capMesh.position.set(position.x, officeElevation + (baseCm + heightCm) / 100 + 0.018, position.z);
     capMesh.rotation.y = mesh.rotation.y;
@@ -1632,6 +1903,108 @@ function addEditableSolid(item, material, baseCm = 0, heightCm = item.h, cap = f
     wallGroup.add(capMesh);
   }
   return mesh;
+}
+
+function getColumnRenderItem(item) {
+  const { building } = CONSTRUCTION_PLAN;
+  const revealDepthCm = 30;
+  const edgeToleranceCm = 130;
+  const seamCoverCm = 1;
+  const nearWest = Math.abs(item.x - building.x0) <= edgeToleranceCm;
+  const nearEast = Math.abs(item.x - building.x1) <= edgeToleranceCm;
+  const nearNorth = Math.abs(item.z - building.z0) <= edgeToleranceCm;
+  const nearSouth = Math.abs(item.z - building.z1) <= edgeToleranceCm;
+  if (!nearWest && !nearEast && !nearNorth && !nearSouth) {
+    return { ...item, w: item.w + seamCoverCm, d: item.d + seamCoverCm };
+  }
+
+  const angle = ((item.rot ?? 0) * Math.PI) / 180;
+  const halfExtentX = Math.abs(Math.cos(angle)) * item.w / 2 + Math.abs(Math.sin(angle)) * item.d / 2;
+  const halfExtentZ = Math.abs(Math.sin(angle)) * item.w / 2 + Math.abs(Math.cos(angle)) * item.d / 2;
+  let x0 = item.x - halfExtentX - seamCoverCm / 2;
+  let x1 = item.x + halfExtentX + seamCoverCm / 2;
+  let z0 = item.z - halfExtentZ - seamCoverCm / 2;
+  let z1 = item.z + halfExtentZ + seamCoverCm / 2;
+  if (nearWest) {
+    const renderedWidth = x1 - x0;
+    x0 = building.x0 - DEFAULT_WALL_THICKNESS_CM / 2;
+    x1 = x0 + renderedWidth;
+  }
+  if (nearEast) x1 = Math.max(x1, building.x1 + revealDepthCm);
+  if (nearNorth) z0 = Math.min(z0, building.z0 - revealDepthCm);
+  if (nearSouth) z1 = Math.max(z1, building.z1 + revealDepthCm);
+
+  return {
+    ...item,
+    x: (x0 + x1) / 2,
+    z: (z0 + z1) / 2,
+    w: x1 - x0,
+    d: z1 - z0,
+    rot: 0,
+  };
+}
+
+function addWestCorrugatedCladding() {
+  const westWalls = editableWalls.filter((wall) => inferWallFinish(wall) === "corrugated");
+  if (!westWalls.length) return;
+  const claddingDepthCm = 1.8;
+  const surfaceGapM = 0.004;
+  const ribDepth = 0.026;
+  const ribWidth = 0.022;
+
+  westWalls.forEach((wall) => {
+    const wallDepthCm = Number(wall.d) || DEFAULT_WALL_THICKNESS_CM;
+    const wallHeightCm = Number(wall.h) || DEFAULT_EXTERIOR_WALL_HEIGHT_CM;
+    const wallOpenings = getArchitecturalWallOpenings(wall)
+      .filter((opening) => opening.end > -wall.w / 2 && opening.start < wall.w / 2)
+      .sort((a, b) => a.start - b.start);
+    const claddingX = wall.x - wallDepthCm / 2 - claddingDepthCm / 2 - surfaceGapM * 100;
+    const claddingWall = {
+      ...wall,
+      type: "cladding",
+      x: claddingX,
+      d: claddingDepthCm,
+      wallCategory: "exterior",
+      wallFinish: "corrugated",
+    };
+    addEditableWall(claddingWall, wallOpenings, materials.corrugatedWall);
+
+    const wallStart = wall.z - wall.w / 2;
+    const wallEnd = wall.z + wall.w / 2;
+    for (let z = wallStart + 12; z < wallEnd; z += 24) {
+      const along = z - wall.z;
+      const verticalCuts = wallOpenings
+        .filter((opening) => along >= opening.start && along <= opening.end)
+        .map((opening) => ({
+          start: Math.max(0, opening.bottom),
+          end: Math.min(wallHeightCm, opening.top),
+        }))
+        .filter((opening) => opening.end > opening.start)
+        .sort((a, b) => a.start - b.start);
+      let cursor = 0;
+      const ribSegments = [];
+      verticalCuts.forEach((cut) => {
+        if (cut.start - cursor >= 1) ribSegments.push({ start: cursor, end: cut.start });
+        cursor = Math.max(cursor, cut.end);
+      });
+      if (wallHeightCm - cursor >= 1) ribSegments.push({ start: cursor, end: wallHeightCm });
+
+      const position = toWorld(claddingX, z);
+      ribSegments.forEach((segment) => {
+        const segmentHeight = (segment.end - segment.start) / 100;
+        const rib = new THREE.Mesh(new THREE.BoxGeometry(ribDepth, segmentHeight, ribWidth), materials.corrugatedRib);
+        rib.position.set(
+          position.x - claddingDepthCm / 200 - ribDepth / 2 - surfaceGapM,
+          officeElevation + segment.start / 100 + segmentHeight / 2,
+          position.z,
+        );
+        rib.castShadow = true;
+        rib.receiveShadow = true;
+        rib.renderOrder = 6;
+        wallGroup.add(rib);
+      });
+    }
+  });
 }
 
 function addEditableDoorSill(item, index) {
@@ -1679,6 +2052,46 @@ function addSelectedWallEndpointHandles() {
     hitHandle.userData.objectType = "wall";
     hitHandle.userData.wallEndpoint = endpointName;
     hitHandle.userData.pickPriority = 20;
+    interactionGroup.add(hitHandle);
+    objectPickMeshes.push(hitHandle);
+  });
+}
+
+function addSelectedRoofResizeHandles() {
+  if (!columnEditorOpen || selectedObject?.type !== "roof" || !roofVisible || cadMode) return;
+  const roof = getSelectedEditableObject();
+  if (!roof) return;
+  const centerWorld = toWorld(roof.x, roof.z);
+  const roofTopY = getRoofBaseY() + roof.h / 100;
+  const handles = [
+    { axis: "w", x: centerWorld.x + roof.w / 200, y: roofTopY + 0.1, z: centerWorld.z },
+    { axis: "w", x: centerWorld.x - roof.w / 200, y: roofTopY + 0.1, z: centerWorld.z },
+    { axis: "d", x: centerWorld.x, y: roofTopY + 0.1, z: centerWorld.z + roof.d / 200 },
+    { axis: "d", x: centerWorld.x, y: roofTopY + 0.1, z: centerWorld.z - roof.d / 200 },
+    { axis: "h", x: centerWorld.x, y: roofTopY + 0.42, z: centerWorld.z },
+  ];
+
+  const guide = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(centerWorld.x, roofTopY + 0.02, centerWorld.z),
+      new THREE.Vector3(centerWorld.x, roofTopY + 0.42, centerWorld.z),
+    ]),
+    materials.selectionLine,
+  );
+  guide.renderOrder = 58;
+  interactionGroup.add(guide);
+
+  handles.forEach((handle) => {
+    const visibleHandle = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), materials.wallHandle);
+    visibleHandle.position.set(handle.x, handle.y, handle.z);
+    visibleHandle.renderOrder = 60;
+    interactionGroup.add(visibleHandle);
+    const hitHandle = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.48, 0.48), materials.objectPick);
+    hitHandle.position.copy(visibleHandle.position);
+    hitHandle.userData.objectId = roof.id;
+    hitHandle.userData.objectType = "roof";
+    hitHandle.userData.roofResizeAxis = handle.axis;
+    hitHandle.userData.pickPriority = 30;
     interactionGroup.add(hitHandle);
     objectPickMeshes.push(hitHandle);
   });
@@ -1852,6 +2265,22 @@ function addCadFootprint(item, material, y) {
 }
 
 function addCadDoor(item, y) {
+  if (item.doorStyle === "automatic") {
+    addCadOrientedRect(item.x, item.z, item.w, Math.max(item.d, 6), item.rot ?? 0, cadMaterials.medium, y);
+    const angle = ((item.rot ?? 0) * Math.PI) / 180;
+    const axis = { x: Math.cos(angle), z: Math.sin(angle) };
+    const center = toWorld(item.x, item.z);
+    const halfCenterBay = (item.w / 100) * (190 / 471) * 0.5;
+    addCadPolyline([
+      [center.x - axis.x * halfCenterBay, center.z - axis.z * halfCenterBay],
+      [center.x + axis.x * halfCenterBay, center.z + axis.z * halfCenterBay],
+    ], cadMaterials.light, y);
+    addCadPolyline([
+      [center.x, center.z],
+      [center.x + axis.x * (doorsOpen ? halfCenterBay * 0.82 : 0.04), center.z + axis.z * (doorsOpen ? halfCenterBay * 0.82 : 0.04)],
+    ], cadMaterials.medium, y);
+    return;
+  }
   const angle = (item.rot * Math.PI) / 180;
   const axis = { x: Math.cos(angle), z: Math.sin(angle) };
   const hingeSign = item.hingeAtStart ? -1 : 1;
@@ -1962,7 +2391,10 @@ function addWindow(item, group, index = 0) {
   const frameDepth = Math.max(depth + 0.04, linkedWallDepth + 0.04, 0.1);
   const windowGroup = new THREE.Group();
   const glassHeight = Math.max(item.h / 100, 0.3);
-  const sillHeight = officeElevation + item.sillCm / 100 + glassHeight / 2;
+  const openingBase = officeElevation + item.sillCm / 100;
+  const surfaceInset = Math.min(0.012, glassHeight * 0.025);
+  const renderHeight = Math.max(glassHeight - surfaceInset * 2, 0.28);
+  const sillHeight = openingBase + glassHeight / 2;
   const frameBar = Math.min(0.065, glassHeight * 0.12);
   const materialOffset = index * 10;
   const glassMaterial = getStableConnectionMaterial(materials.glass, `window-${item.id}-glass`, -(320 + materialOffset));
@@ -1972,12 +2404,12 @@ function addWindow(item, group, index = 0) {
     -(330 + materialOffset + partIndex),
   ));
 
-  addBoxToGroup(windowGroup, width, glassHeight, glassDepth, glassMaterial, 0, sillHeight, 0).renderOrder = 7;
-  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, frameMaterials[0], 0, sillHeight + glassHeight / 2 + frameBar / 2, 0).renderOrder = 8;
-  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, frameMaterials[1], 0, sillHeight - glassHeight / 2 - frameBar / 2, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, width, renderHeight, glassDepth, glassMaterial, 0, sillHeight, 0).renderOrder = 7;
+  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, frameMaterials[0], 0, openingBase + glassHeight - frameBar / 2 - surfaceInset, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, width + 0.06, frameBar, frameDepth, frameMaterials[1], 0, openingBase + frameBar / 2 + surfaceInset, 0).renderOrder = 8;
   addBoxToGroup(windowGroup, width + 0.04, frameBar, frameDepth, frameMaterials[2], 0, sillHeight, 0).renderOrder = 8;
-  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, frameMaterials[3], -width / 2 - 0.03, sillHeight, 0).renderOrder = 8;
-  addBoxToGroup(windowGroup, 0.055, glassHeight + 0.13, frameDepth, frameMaterials[4], width / 2 + 0.03, sillHeight, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, 0.055, renderHeight, frameDepth, frameMaterials[3], -width / 2 - 0.03, sillHeight, 0).renderOrder = 8;
+  addBoxToGroup(windowGroup, 0.055, renderHeight, frameDepth, frameMaterials[4], width / 2 + 0.03, sillHeight, 0).renderOrder = 8;
 
   windowGroup.position.set(p.x, 0, p.z);
   windowGroup.rotation.y = rotation;
@@ -2345,7 +2777,7 @@ function applyCadMode() {
     wallGroup.visible = true;
     furnitureGroup.visible = furnitureVisible;
     fixtureGroup.visible = true;
-    labelGroup.visible = document.querySelector("#toggleLabels")?.classList.contains("is-active") ?? true;
+    labelGroup.visible = labelsVisible;
     roofGroup.visible = roofVisible;
     cadGroup.visible = false;
     scene.background = defaultBackground.clone();
@@ -2353,6 +2785,7 @@ function applyCadMode() {
     toggleCadViewButton?.classList.remove("is-active");
     setCameraPreset("default");
   }
+  rebuildWalls();
   updateStatus();
 }
 
@@ -2523,6 +2956,10 @@ function addFootprint(item, height, material, group, options = {}) {
 }
 
 function addDoor(item, group, index = 0) {
+  if (item.doorStyle === "automatic") {
+    addAutomaticDoor(item, group, index);
+    return;
+  }
   const angle = (item.rot * Math.PI) / 180;
   const axis = { x: Math.cos(angle), z: Math.sin(angle) };
   const hingeSign = item.hingeAtStart ? -1 : 1;
@@ -2557,6 +2994,76 @@ function addDoor(item, group, index = 0) {
   const closedVector = { x: closedDir.x * length, z: closedDir.z * length };
   const openVector = { x: dir.x * length, z: dir.z * length };
   if (doorsOpen) addDoorSwingArc(hinge, closedVector, openVector, length, group);
+}
+
+function addAutomaticDoor(item, group, index = 0) {
+  const position = toWorld(item.x, item.z);
+  const width = Math.max(item.w / 100, 1.9);
+  const height = Math.max(item.h / 100, 3);
+  const lowerHeight = Math.min(height, 3);
+  const upperHeight = height - lowerHeight;
+  const centerWidth = width * (190 / 471);
+  const sideWidth = (width - centerWidth) / 2;
+  const linkedWallDepth = (findWallReferenceById(item.wallId)?.item?.d ?? item.d) / 100;
+  const glassDepth = Math.min(Math.max(item.d / 100, 0.025), 0.045);
+  const frameDepth = Math.max(linkedWallDepth + 0.04, 0.1);
+  const bar = Math.min(0.075, width * 0.018);
+  const doorGroup = new THREE.Group();
+  const materialOffset = index * 20;
+  const glassMaterial = getStableConnectionMaterial(materials.glass, `door-${item.id}-glass`, -(520 + materialOffset));
+  const frameMaterials = Array.from({ length: 14 }, (_, partIndex) => getStableConnectionMaterial(
+    materials.windowFrame,
+    `door-${item.id}-frame-${partIndex}`,
+    -(540 + materialOffset + partIndex),
+  ));
+  let frameIndex = 0;
+  const addFrame = (w, h, x, y, z = 0) => {
+    const mesh = addBoxToGroup(doorGroup, w, h, frameDepth, frameMaterials[frameIndex++ % frameMaterials.length], x, y, z);
+    mesh.renderOrder = 9;
+    return mesh;
+  };
+  const addGlass = (w, h, x, y, z = 0) => {
+    const mesh = addBoxToGroup(doorGroup, Math.max(w - bar * 1.35, 0.08), Math.max(h - bar * 1.35, 0.08), glassDepth, glassMaterial, x, y, z);
+    mesh.renderOrder = 8;
+    return mesh;
+  };
+
+  const baseY = officeElevation;
+  const lowerCenterY = baseY + lowerHeight / 2;
+  const upperCenterY = baseY + lowerHeight + upperHeight / 2;
+  const leftCenter = -(centerWidth + sideWidth) / 2;
+  const rightCenter = -leftCenter;
+  addGlass(sideWidth, lowerHeight, leftCenter, lowerCenterY);
+  addGlass(sideWidth, lowerHeight, rightCenter, lowerCenterY);
+  addGlass(sideWidth, upperHeight, leftCenter, upperCenterY);
+  addGlass(centerWidth, upperHeight, 0, upperCenterY);
+  addGlass(sideWidth, upperHeight, rightCenter, upperCenterY);
+
+  const leafWidth = centerWidth / 2;
+  const slideOffset = doorsOpen ? leafWidth * 0.84 : 0;
+  const leafPositions = [-leafWidth / 2 - slideOffset, leafWidth / 2 + slideOffset];
+  leafPositions.forEach((x, leafIndex) => {
+    addGlass(leafWidth, lowerHeight, x, lowerCenterY, doorsOpen ? -0.025 : 0);
+    addFrame(bar, lowerHeight, x + (leafIndex === 0 ? leafWidth / 2 : -leafWidth / 2), lowerCenterY, doorsOpen ? -0.035 : 0);
+  });
+
+  addFrame(width + bar, bar, 0, baseY + bar / 2);
+  addFrame(width + bar, bar, 0, baseY + height - bar / 2);
+  addFrame(bar, height, -width / 2, baseY + height / 2);
+  addFrame(bar, height, width / 2, baseY + height / 2);
+  addFrame(width, bar, 0, baseY + lowerHeight);
+  addFrame(bar, height, -centerWidth / 2, baseY + height / 2);
+  addFrame(bar, height, centerWidth / 2, baseY + height / 2);
+  if (!doorsOpen) addFrame(bar, lowerHeight, 0, lowerCenterY, 0.012);
+
+  const handleY = baseY + Math.min(1.08, lowerHeight * 0.52);
+  for (const sign of [-1, 1]) {
+    addBoxToGroup(doorGroup, 0.025, 0.34, 0.035, materials.metal, sign * 0.075, handleY, frameDepth / 2 + 0.025).renderOrder = 10;
+  }
+
+  doorGroup.position.set(position.x, 0, position.z);
+  doorGroup.rotation.y = ((item.rot ?? 0) * Math.PI) / 180;
+  group.add(doorGroup);
 }
 
 function addDoorSwingArc(hinge, va, vb, radius, group) {
@@ -2641,16 +3148,25 @@ function syncColumnEditor() {
   const selected = descriptor ? getEditableObjectById(descriptor.id, descriptor.type) : null;
   const editable = Boolean(columnEditorOpen && descriptor?.editable && selected);
   const wallOpeningSelected = ["door", "window"].includes(descriptor?.type);
+  const roofSelected = descriptor?.type === "roof";
   objectEditorInputs.forEach((input) => {
     if (input) input.disabled = !editable;
   });
-  if (objectRotationInput && wallOpeningSelected) {
+  if (objectRotationInput && (wallOpeningSelected || roofSelected)) {
     objectRotationInput.disabled = true;
   }
+  columnEditor?.classList.toggle("is-roof-selected", roofSelected);
+  if (columnXField) columnXField.hidden = roofSelected;
+  if (columnZField) columnZField.hidden = roofSelected;
   if (columnDField) columnDField.hidden = wallOpeningSelected;
   if (columnInputs.d && wallOpeningSelected) columnInputs.d.disabled = true;
+  if (objectHeightField) objectHeightField.hidden = false;
+  if (objectRotationField) objectRotationField.hidden = roofSelected;
   if (columnInputs.w) columnInputs.w.min = descriptor?.type === "window" ? "1" : descriptor?.type === "door" ? "40" : "10";
-  if (objectHeightInput) objectHeightInput.max = descriptor?.type === "column" ? "1000" : descriptor?.type === "wall" ? "600" : "500";
+  if (objectHeightInput) {
+    objectHeightInput.min = roofSelected ? "5" : "1";
+    objectHeightInput.max = descriptor?.type === "column" ? "1000" : ["wall", "door", "window"].includes(descriptor?.type) ? "600" : "500";
+  }
   if (objectVerticalField) objectVerticalField.hidden = descriptor?.type !== "window";
   if (objectVerticalInput) objectVerticalInput.disabled = !editable || descriptor?.type !== "window";
   if (descriptor?.type === "furniture") {
@@ -2658,14 +3174,14 @@ function syncColumnEditor() {
     columnInputs.d.disabled = true;
     objectHeightInput.disabled = true;
   }
-  deleteObjectButton?.toggleAttribute("disabled", !editable);
+  deleteObjectButton?.toggleAttribute("disabled", !editable || roofSelected);
   splitWallButton?.toggleAttribute("disabled", descriptor?.type !== "wall");
-  flipDoorButton?.toggleAttribute("disabled", descriptor?.type !== "door");
+  flipDoorButton?.toggleAttribute("disabled", descriptor?.type !== "door" || selected?.doorStyle === "automatic");
   updateHistoryButtons();
 
   if (!columnHint) return;
   if (!columnEditorOpen) {
-    columnHint.textContent = "點選牆、柱、門、窗或家具";
+    columnHint.textContent = "點選屋頂、牆、柱、門、窗或家具";
     return;
   }
   if (!descriptor) {
@@ -2674,13 +3190,17 @@ function syncColumnEditor() {
     });
     if (objectTypeOutput) objectTypeOutput.textContent = "尚未選取";
     if (objectIdOutput) objectIdOutput.textContent = "點選模型中的物件";
+    if (columnXField) columnXField.hidden = false;
+    if (columnZField) columnZField.hidden = false;
     if (columnDField) columnDField.hidden = false;
+    if (objectHeightField) objectHeightField.hidden = false;
+    if (objectRotationField) objectRotationField.hidden = false;
     if (objectVerticalField) objectVerticalField.hidden = true;
     if (objectRelation) objectRelation.hidden = true;
     Object.entries({ x: "X", z: "Z", w: "寬", d: "深" }).forEach(([key, label]) => {
       if (columnFieldLabels[key]) columnFieldLabels[key].textContent = label;
     });
-    columnHint.textContent = "點選牆、柱、門、窗或家具";
+    columnHint.textContent = "點選屋頂、牆、柱、門、窗或家具";
     return;
   }
 
@@ -2696,7 +3216,7 @@ function syncColumnEditor() {
     objectVerticalInput.max = String(Math.max(0, Math.round(wallHeight - metrics.h)));
     objectVerticalInput.value = Math.round(metrics.sillCm ?? 0);
   }
-  if (objectHeightLabel) objectHeightLabel.textContent = "高 cm";
+  if (objectHeightLabel) objectHeightLabel.textContent = roofSelected ? "厚 cm" : "高 cm";
   Object.entries(descriptor.fieldLabels ?? {}).forEach(([key, label]) => {
     if (columnFieldLabels[key]) columnFieldLabels[key].textContent = label;
   });
@@ -2715,7 +3235,8 @@ function syncColumnEditor() {
     const wallConstraint = ["door", "window"].includes(descriptor.type) ? "；位置與角度會吸附牆面" : "";
     const wallResizeHint = descriptor.type === "wall" ? "；拖曳兩端圓點伸縮" : "";
     const furnitureHint = descriptor.type === "furniture" ? "；僅移動與轉向" : "";
-    columnHint.textContent = `${descriptor.typeLabel} ${index}/${collection.length}；可拖曳或輸入整數公分${wallConstraint}${wallResizeHint}${furnitureHint}`;
+    const roofHint = descriptor.type === "roof" ? "；固定置中，拖曳邊緣與頂部控制點調整長、寬、厚度" : "";
+    columnHint.textContent = `${descriptor.typeLabel} ${index}/${collection.length}；可拖曳或輸入整數公分${wallConstraint}${wallResizeHint}${furnitureHint}${roofHint}`;
   } else {
     columnHint.textContent = `${descriptor.typeLabel}；可拖曳或輸入整數公分`;
   }
@@ -2861,7 +3382,7 @@ function splitSelectedWall() {
 
 function flipSelectedDoor() {
   const door = getSelectedEditableObject();
-  if (!door || door.type !== "door") return;
+  if (!door || door.type !== "door" || door.doorStyle === "automatic") return;
   door.swingSign = door.swingSign === -1 ? 1 : -1;
   rebuildWalls();
 }
@@ -2879,8 +3400,11 @@ function deleteSelectedColumn() {
 
 function resetEditableColumns() {
   editableColumns = makeEditableColumns(data.columns);
+  currentColumnHeight = DEFAULT_COLUMN_HEIGHT_CM / 100;
+  columnHeightInput.value = currentColumnHeight.toFixed(2);
   selectedColumnId = editableColumns[0]?.__id ?? null;
   selectedObject = selectedColumnId ? { id: selectedColumnId, type: "column" } : null;
+  updateWallHeightLabel();
   syncColumnEditor();
   rebuildWalls();
 }
@@ -2892,12 +3416,14 @@ function getCurrentPlanState() {
     savedAt: new Date().toISOString(),
     wallHeightM: Number(currentWallHeight.toFixed(2)),
     exteriorWallHeightM: Number(currentExteriorWallHeight.toFixed(2)),
+    columnHeightM: Number(currentColumnHeight.toFixed(2)),
     walls: editableWalls.map(serializeEditableItem),
     lowWalls: editableLowWalls.map(serializeEditableItem),
     columns: editableColumns.map(serializeEditableItem),
     doors: editableDoors.map(serializeEditableItem),
     windows: editableWindows.map(serializeEditableItem),
     furniture: editableFurniture.map(serializeEditableItem),
+    roof: serializeEditableItem(editableRoof),
   };
 }
 
@@ -2915,6 +3441,7 @@ function serializeEditableItem(item) {
     source: String(item.source ?? item.id).slice(0, 120),
   };
   if (item.type === "door") {
+    result.doorStyle = item.doorStyle === "automatic" ? "automatic" : "swing";
     result.hingeAtStart = Boolean(item.hingeAtStart);
     result.swingSign = item.swingSign === -1 ? -1 : 1;
     result.swingModelVersion = 2;
@@ -2932,6 +3459,7 @@ function serializeEditableItem(item) {
 function getOriginalEditableState(
   wallHeightM = DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100,
   exteriorWallHeightM = DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100,
+  columnHeightM = DEFAULT_COLUMN_HEIGHT_CM / 100,
 ) {
   const original = {
     walls: makeEditableFootprints(data.walls, "wall", Math.round(wallHeightM * 100)),
@@ -2940,10 +3468,15 @@ function getOriginalEditableState(
     doors: makeEditableDoors(data.doors ?? [], data.doorSills ?? []),
     windows: makeEditableWindows(WINDOW_ITEMS),
     furniture: makeEditableFurniture(DESIGN_ITEMS),
+    roof: createDefaultRoof(),
   };
+  normalizeEntranceFacadeWall(original.walls);
   assignWallCategories(original.walls);
   original.walls.forEach((wall) => {
     wall.h = Math.round((wall.wallCategory === "exterior" ? exteriorWallHeightM : wallHeightM) * 100);
+  });
+  original.columns.forEach((column) => {
+    column.h = Math.round(columnHeightM * 100);
   });
   normalizeAmbiguousToiletWallStubs(original.walls);
   bridgeWallSegmentsAtDoors(original.walls, original.doors, original.windows);
@@ -2960,8 +3493,8 @@ function normalizeEditableItems(items, type, limit = 200) {
       throw new Error(`${type} 第 ${index + 1} 筆尺寸不正確`);
     }
     const minimumWidth = type === "window" ? 1 : type === "door" ? 40 : 10;
-    const minimumDepth = type === "column" ? 10 : 3;
-    const minimumHeight = type === "door" ? 150 : type === "window" ? 30 : type === "furniture" ? 1 : 10;
+    const minimumDepth = ["column", "roof"].includes(type) ? 10 : 3;
+    const minimumHeight = type === "door" ? 150 : type === "window" ? 30 : type === "furniture" ? 1 : type === "roof" ? 5 : 10;
     if (numeric.w < minimumWidth || numeric.d < minimumDepth || numeric.h < minimumHeight) {
       throw new Error(`${type} 第 ${index + 1} 筆尺寸過小`);
     }
@@ -2977,15 +3510,16 @@ function normalizeEditableItems(items, type, limit = 200) {
       __id: id,
       type,
       kind: type,
-      x: Math.round(numeric.x),
-      z: Math.round(numeric.z),
+      x: type === "roof" ? Math.round((CONSTRUCTION_PLAN.building.x0 + CONSTRUCTION_PLAN.building.x1) / 2) : Math.round(numeric.x),
+      z: type === "roof" ? Math.round((CONSTRUCTION_PLAN.building.z0 + CONSTRUCTION_PLAN.building.z1) / 2) : Math.round(numeric.z),
       w: Math.round(numeric.w),
       d: Math.round(numeric.d),
-      h: Math.round(Math.min(numeric.h, type === "column" ? 1000 : type === "wall" ? 600 : 500)),
-      rot: normalizeAngle(Math.round(numeric.rot)),
+      h: Math.round(Math.min(numeric.h, type === "column" ? 1000 : ["wall", "door", "window"].includes(type) ? 600 : 500)),
+      rot: type === "roof" ? 0 : normalizeAngle(Math.round(numeric.rot)),
       source: typeof item.source === "string" ? item.source.slice(0, 120) : `imported-${type}`,
     };
     if (type === "door") {
+      normalized.doorStyle = item.doorStyle === "automatic" ? "automatic" : "swing";
       normalized.hingeAtStart = Boolean(item.hingeAtStart);
       const savedSwingSign = item.swingSign === -1 ? -1 : 1;
       normalized.swingSign = Number(item.swingModelVersion) >= 2 || normalized.hingeAtStart
@@ -3012,8 +3546,8 @@ function normalizeEditableItems(items, type, limit = 200) {
 
 function normalizePlanState(plan) {
   const schemaVersion = Number(plan?.schemaVersion);
-  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || ![1, 2, 3, 4, PLAN_SCHEMA_VERSION].includes(schemaVersion)) {
-    throw new Error("不是相容的封王 288 號調整方案");
+  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || ![1, 2, 3, 4, 5, PLAN_SCHEMA_VERSION].includes(schemaVersion)) {
+    throw new Error("不是相容的封王 288 號備份檔");
   }
   if (!Array.isArray(plan.columns) || plan.columns.length > 100) {
     throw new Error("柱子資料數量不正確");
@@ -3021,21 +3555,27 @@ function normalizePlanState(plan) {
 
   const wallHeightM = Number(plan.wallHeightM);
   const exteriorWallHeightM = Number(plan.exteriorWallHeightM ?? wallHeightM);
+  const columnHeightM = Number(plan.columnHeightM ?? ((plan.columns[0]?.h ?? DEFAULT_COLUMN_HEIGHT_CM) / 100));
   const minWallHeight = Number(wallHeightInput.min);
   const maxWallHeight = Number(wallHeightInput.max);
+  const minColumnHeight = Number(columnHeightInput.min);
+  const maxColumnHeight = Number(columnHeightInput.max);
   if (!Number.isFinite(wallHeightM) || wallHeightM < minWallHeight || wallHeightM > maxWallHeight) {
     throw new Error(`牆高必須介於 ${minWallHeight.toFixed(2)}m 到 ${maxWallHeight.toFixed(2)}m`);
   }
   if (!Number.isFinite(exteriorWallHeightM) || exteriorWallHeightM < minWallHeight || exteriorWallHeightM > maxWallHeight) {
     throw new Error(`外牆高度必須介於 ${minWallHeight.toFixed(2)}m 到 ${maxWallHeight.toFixed(2)}m`);
   }
+  if (!Number.isFinite(columnHeightM) || columnHeightM < minColumnHeight || columnHeightM > maxColumnHeight) {
+    throw new Error(`柱子高度必須介於 ${minColumnHeight.toFixed(2)}m 到 ${maxColumnHeight.toFixed(2)}m`);
+  }
 
   let collections;
   if (schemaVersion < 3) {
-    collections = getOriginalEditableState(wallHeightM, exteriorWallHeightM);
+    collections = getOriginalEditableState(wallHeightM, exteriorWallHeightM, columnHeightM);
     collections.columns = makeEditableFootprints(plan.columns, "column", DEFAULT_COLUMN_HEIGHT_CM);
   } else {
-    const fallback = getOriginalEditableState(wallHeightM, exteriorWallHeightM);
+    const fallback = getOriginalEditableState(wallHeightM, exteriorWallHeightM, columnHeightM);
     collections = {
       walls: normalizeEditableItems(plan.walls ?? fallback.walls, "wall"),
       lowWalls: normalizeEditableItems(plan.lowWalls ?? fallback.lowWalls, "low-wall"),
@@ -3043,6 +3583,7 @@ function normalizePlanState(plan) {
       doors: normalizeEditableItems(plan.doors ?? fallback.doors, "door", 100),
       windows: normalizeEditableItems(plan.windows ?? fallback.windows, "window", 100),
       furniture: normalizeEditableItems(plan.furniture ?? fallback.furniture, "furniture", 200),
+      roof: normalizeEditableItems([plan.roof ?? fallback.roof], "roof", 1)[0],
     };
   }
   if (schemaVersion < 4) {
@@ -3053,6 +3594,7 @@ function normalizePlanState(plan) {
     });
   }
   assignWallCategories(collections.walls);
+  collections.walls = collections.walls.filter((wall) => !REMOVED_WALL_SOURCES.has(wall.source));
 
   const savedAt = new Date(plan.savedAt);
   return {
@@ -3061,25 +3603,29 @@ function normalizePlanState(plan) {
     savedAt: Number.isNaN(savedAt.getTime()) ? new Date().toISOString() : savedAt.toISOString(),
     wallHeightM: Number(wallHeightM.toFixed(2)),
     exteriorWallHeightM: Number(exteriorWallHeightM.toFixed(2)),
+    columnHeightM: Number(columnHeightM.toFixed(2)),
     walls: collections.walls.map(serializeEditableItem),
     lowWalls: collections.lowWalls.map(serializeEditableItem),
     columns: collections.columns.map(serializeEditableItem),
     doors: collections.doors.map(serializeEditableItem),
     windows: collections.windows.map(serializeEditableItem),
     furniture: collections.furniture.map(serializeEditableItem),
+    roof: serializeEditableItem(collections.roof),
   };
 }
 
 function createOriginalPlanState() {
   const defaultWallHeightM = DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100;
   const defaultExteriorWallHeightM = DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100;
+  const defaultColumnHeightM = DEFAULT_COLUMN_HEIGHT_CM / 100;
   return normalizePlanState({
     format: PLAN_FORMAT,
     schemaVersion: PLAN_SCHEMA_VERSION,
     savedAt: new Date().toISOString(),
     wallHeightM: defaultWallHeightM,
     exteriorWallHeightM: defaultExteriorWallHeightM,
-    ...getOriginalEditableState(defaultWallHeightM, defaultExteriorWallHeightM),
+    columnHeightM: defaultColumnHeightM,
+    ...getOriginalEditableState(defaultWallHeightM, defaultExteriorWallHeightM, defaultColumnHeightM),
   });
 }
 
@@ -3088,14 +3634,17 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   const previousSelection = preserveSelection && selectedObject ? { ...selectedObject } : null;
   currentWallHeight = normalized.wallHeightM;
   currentExteriorWallHeight = normalized.exteriorWallHeightM;
+  currentColumnHeight = normalized.columnHeightM;
   wallHeightInput.value = currentWallHeight.toFixed(2);
   exteriorWallHeightInput.value = currentExteriorWallHeight.toFixed(2);
+  columnHeightInput.value = currentColumnHeight.toFixed(2);
   editableWalls = normalizeEditableItems(normalized.walls, "wall");
   editableLowWalls = normalizeEditableItems(normalized.lowWalls, "low-wall");
   editableColumns = normalizeEditableItems(normalized.columns, "column", 100);
   editableDoors = normalizeEditableItems(normalized.doors, "door", 100);
   editableWindows = normalizeEditableItems(normalized.windows, "window", 100);
   editableFurniture = normalizeEditableItems(normalized.furniture, "furniture", 200);
+  editableRoof = normalizeEditableItems([normalized.roof], "roof", 1)[0];
   bridgeWallSegmentsAtDoors();
   refreshOpeningWallLinks();
   selectedObject = previousSelection && getEditableObjectById(previousSelection.id, previousSelection.type) ? previousSelection : null;
@@ -3121,17 +3670,17 @@ function createSchemeId(prefix = "scheme") {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizeSchemeName(value, fallback = "未命名方案") {
+function normalizeSchemeName(value, fallback = "未命名版本") {
   const name = String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
   return name || fallback;
 }
 
 function normalizeWorkspace(value) {
   if (!value || typeof value !== "object" || value.format !== WORKSPACE_FORMAT || Number(value.schemaVersion) !== WORKSPACE_SCHEMA_VERSION) {
-    throw new Error("方案資料格式不相容");
+    throw new Error("版本資料格式不相容");
   }
   if (!Array.isArray(value.schemes) || value.schemes.length > MAX_SCHEMES) {
-    throw new Error(`方案數量不得超過 ${MAX_SCHEMES} 組`);
+    throw new Error(`版本數量不得超過 ${MAX_SCHEMES} 個`);
   }
 
   const usedIds = new Set();
@@ -3147,7 +3696,7 @@ function normalizeWorkspace(value) {
     const updatedAt = new Date(scheme?.updatedAt);
     return {
       id,
-      name: normalizeSchemeName(scheme?.name, `方案 ${index + 1}`),
+      name: normalizeSchemeName(scheme?.name === "舊版草稿" ? "舊存檔（自動保留）" : scheme?.name, `版本 ${index + 1}`),
       createdAt: Number.isNaN(createdAt.getTime()) ? new Date().toISOString() : createdAt.toISOString(),
       updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date().toISOString() : updatedAt.toISOString(),
       plan: normalizePlanState(scheme?.plan),
@@ -3175,7 +3724,7 @@ function loadWorkspace() {
     const now = new Date().toISOString();
     emptyWorkspace.schemes.push({
       id: createSchemeId("legacy"),
-      name: "舊版草稿",
+      name: "舊存檔（自動保留）",
       createdAt: plan.savedAt || now,
       updatedAt: plan.savedAt || now,
       plan,
@@ -3202,7 +3751,7 @@ function renderSchemeOptions() {
   if (selectedSchemeId !== ORIGINAL_SCHEME_ID && !validSchemeIds.has(selectedSchemeId)) {
     selectedSchemeId = ORIGINAL_SCHEME_ID;
   }
-  schemeSelect.replaceChildren(new Option("原始格局（鎖定）", ORIGINAL_SCHEME_ID));
+  schemeSelect.replaceChildren(new Option("系統基準（不可覆寫）", ORIGINAL_SCHEME_ID));
   workspace.schemes.forEach((scheme) => {
     schemeSelect.add(new Option(scheme.name, scheme.id));
   });
@@ -3237,13 +3786,13 @@ function refreshPlanStorageStatus(message = "") {
   const referencePlan = isOriginal ? createOriginalPlanState() : selectedScheme?.plan;
   const matches = referencePlan ? planStatesMatch(getCurrentPlanState(), referencePlan) : false;
   if (isOriginal) {
-    planStorageStatus.textContent = matches ? "原始格局（永久鎖定）" : "目前有未儲存調整；請新增方案";
+    planStorageStatus.textContent = matches ? "系統基準（不可覆寫）" : "目前調整尚未儲存，請新增版本";
   } else if (!selectedScheme) {
-    planStorageStatus.textContent = "找不到選取的方案";
+    planStorageStatus.textContent = "找不到選取的版本";
   } else if (matches) {
     planStorageStatus.textContent = `已儲存 ${formatDraftTime(selectedScheme.updatedAt)}`;
   } else {
-    planStorageStatus.textContent = "目前內容與此方案不同";
+    planStorageStatus.textContent = "目前畫面與所選版本不同";
   }
 }
 
@@ -3251,7 +3800,7 @@ function saveDraft() {
   try {
     const scheme = getSelectedScheme();
     if (!scheme) {
-      refreshPlanStorageStatus("原始格局不可覆寫，請先新增方案");
+      refreshPlanStorageStatus("系統基準不可覆寫，請先新增版本");
       return;
     }
     const now = new Date().toISOString();
@@ -3269,9 +3818,9 @@ function loadDraft() {
   try {
     const scheme = getSelectedScheme();
     const isOriginal = selectedSchemeId === ORIGINAL_SCHEME_ID;
-    if (!isOriginal && !scheme) throw new Error("找不到選取的方案");
+    if (!isOriginal && !scheme) throw new Error("找不到選取的版本");
     applyPlanState(isOriginal ? createOriginalPlanState() : scheme.plan);
-    refreshPlanStorageStatus(isOriginal ? "已載入永久鎖定的原始格局" : `已載入「${scheme.name}」`);
+    refreshPlanStorageStatus(isOriginal ? "已套用系統基準" : `已套用「${scheme.name}」`);
   } catch (error) {
     refreshPlanStorageStatus(`載入失敗：${error.message}`);
   }
@@ -3288,13 +3837,13 @@ function getUniqueSchemeName(value, ignoredId = null) {
 
 function createScheme() {
   if (workspace.schemes.length >= MAX_SCHEMES) {
-    refreshPlanStorageStatus(`最多可建立 ${MAX_SCHEMES} 組方案`);
+    refreshPlanStorageStatus(`最多可建立 ${MAX_SCHEMES} 個版本`);
     return;
   }
   const now = new Date().toISOString();
   const scheme = {
     id: createSchemeId(),
-    name: getUniqueSchemeName(`方案 ${workspace.schemes.length + 1}`),
+    name: getUniqueSchemeName(`版本 ${workspace.schemes.length + 1}`),
     createdAt: now,
     updatedAt: now,
     plan: getCurrentPlanState(),
@@ -3309,13 +3858,13 @@ function createScheme() {
 function renameSelectedScheme() {
   const scheme = getSelectedScheme();
   if (!scheme) return;
-  const proposedName = window.prompt("重新命名方案", scheme.name);
+  const proposedName = window.prompt("重新命名版本", scheme.name);
   if (proposedName === null) return;
   scheme.name = getUniqueSchemeName(proposedName, scheme.id);
   scheme.updatedAt = new Date().toISOString();
   persistWorkspace();
   renderSchemeOptions();
-  refreshPlanStorageStatus(`方案已重新命名為「${scheme.name}」`);
+  refreshPlanStorageStatus(`版本已重新命名為「${scheme.name}」`);
 }
 
 function deleteSelectedScheme() {
@@ -3348,7 +3897,7 @@ function exportPlan() {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  refreshPlanStorageStatus("方案已匯出");
+  refreshPlanStorageStatus("目前畫面的備份檔已下載");
 }
 
 async function importPlanFromFile(event) {
@@ -3356,7 +3905,7 @@ async function importPlanFromFile(event) {
   if (!file) return;
   try {
     if (file.size > 512 * 1024) throw new Error("檔案超過 512KB");
-    if (workspace.schemes.length >= MAX_SCHEMES) throw new Error(`方案已達 ${MAX_SCHEMES} 組上限`);
+    if (workspace.schemes.length >= MAX_SCHEMES) throw new Error(`版本已達 ${MAX_SCHEMES} 個上限`);
     const imported = normalizePlanState(JSON.parse(await file.text()));
     const now = new Date().toISOString();
     const scheme = {
@@ -3371,7 +3920,7 @@ async function importPlanFromFile(event) {
     persistWorkspace();
     renderSchemeOptions();
     applyPlanState(imported);
-    refreshPlanStorageStatus(`已匯入「${scheme.name}」，共 ${imported.columns.length} 根柱`);
+    refreshPlanStorageStatus(`已從備份新增「${scheme.name}」`);
   } catch (error) {
     refreshPlanStorageStatus(`匯入失敗：${error.message}`);
   } finally {
@@ -3380,12 +3929,12 @@ async function importPlanFromFile(event) {
 }
 
 function restoreOriginalPlan() {
-  const confirmed = window.confirm("恢復原始柱子位置與牆高？已儲存的命名方案不會被刪除。");
+  const confirmed = window.confirm("將牆、柱、門、窗、家具、屋頂與牆高全部恢復為系統基準？已儲存版本不會被刪除。");
   if (!confirmed) return;
-  performHistoryAction("恢復原始格局", () => applyPlanState(createOriginalPlanState(), { clearHistory: false }));
+  performHistoryAction("回到系統基準", () => applyPlanState(createOriginalPlanState(), { clearHistory: false }));
   selectedSchemeId = ORIGINAL_SCHEME_ID;
   renderSchemeOptions();
-  refreshPlanStorageStatus("已恢復原始格局；命名方案仍保留");
+  refreshPlanStorageStatus("已回到系統基準；已儲存版本仍保留");
 }
 
 function planStateSignature(plan) {
@@ -3400,6 +3949,7 @@ function planStateSignature(plan) {
     sillCm: item.sillCm == null ? undefined : Number(item.sillCm),
     hingeAtStart: item.hingeAtStart,
     swingSign: item.swingSign,
+    doorStyle: item.doorStyle,
     wallCategory: item.wallCategory,
     furnitureType: item.furnitureType,
     source: item.source,
@@ -3407,12 +3957,14 @@ function planStateSignature(plan) {
   return JSON.stringify({
     wallHeightM: Number(Number(plan.wallHeightM).toFixed(2)),
     exteriorWallHeightM: Number(Number(plan.exteriorWallHeightM ?? plan.wallHeightM).toFixed(2)),
+    columnHeightM: Number(Number(plan.columnHeightM ?? DEFAULT_COLUMN_HEIGHT_CM / 100).toFixed(2)),
     walls: serializeCollection(plan.walls),
     lowWalls: serializeCollection(plan.lowWalls),
     columns: serializeCollection(plan.columns),
     doors: serializeCollection(plan.doors),
     windows: serializeCollection(plan.windows),
     furniture: serializeCollection(plan.furniture),
+    roof: serializeCollection([plan.roof]),
   });
 }
 
@@ -3532,7 +4084,7 @@ function getObjectHitFromEvent(event) {
 
 function getPlanPointFromEvent(event) {
   setPointerFromEvent(event);
-  dragPlane.constant = -officeElevation;
+  dragPlane.constant = -activeDragPlaneY;
   if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return null;
   return toPlan(dragPoint.x, dragPoint.z);
 }
@@ -3556,11 +4108,25 @@ function startObjectInteraction(event) {
   selectedColumnId = descriptor.type === "column" ? objectId : null;
 
   const selected = getSelectedEditableObject();
+  const roofResizeAxis = hit.object.userData.roofResizeAxis;
+  activeDragPlaneY = selected?.type === "roof"
+    ? getRoofBaseY() + selected.h / 100
+    : officeElevation;
   const planPoint = getPlanPointFromEvent(event);
+  if (selected?.type === "roof" && !roofResizeAxis) {
+    rebuildWalls();
+    return;
+  }
   if (selected && planPoint) {
-    beginHistoryAction(`拖曳${descriptor.typeLabel}`);
+    beginHistoryAction(selected.type === "roof" ? "調整屋頂尺寸" : `拖曳${descriptor.typeLabel}`);
     const wallEndpoint = hit.object.userData.wallEndpoint;
-    if (selected.type === "wall" && wallEndpoint) {
+    if (selected.type === "roof" && roofResizeAxis) {
+      draggingObjectMode = `roof-${roofResizeAxis}`;
+      roofResizeStart = { ...getEditableMetrics(selected) };
+      roofResizeStartClientY = event.clientY;
+      fixedWallEndpoint = null;
+      dragObjectOffset = { x: 0, z: 0 };
+    } else if (selected.type === "wall" && wallEndpoint) {
       const endpoints = getWallEndpoints(selected);
       draggingObjectMode = `wall-${wallEndpoint}`;
       fixedWallEndpoint = wallEndpoint === "start" ? endpoints.end : endpoints.start;
@@ -3586,7 +4152,14 @@ function dragSelectedObject(event) {
   const selected = getEditableObjectById(draggingObjectId);
   const planPoint = getPlanPointFromEvent(event);
   if (!selected || !planPoint) return;
-  if (selected.type === "wall" && draggingObjectMode.startsWith("wall-") && fixedWallEndpoint) {
+  if (selected.type === "roof" && draggingObjectMode.startsWith("roof-") && roofResizeStart) {
+    const axis = draggingObjectMode.slice(5);
+    const metrics = { ...getEditableMetrics(selected) };
+    if (axis === "w") metrics.w = Math.max(10, Math.round(Math.abs(planPoint.x - selected.x) * 2));
+    if (axis === "d") metrics.d = Math.max(10, Math.round(Math.abs(planPoint.z - selected.z) * 2));
+    if (axis === "h") metrics.h = Math.max(5, Math.min(500, Math.round(roofResizeStart.h + (roofResizeStartClientY - event.clientY) * 2)));
+    setEditableMetrics(selected, metrics);
+  } else if (selected.type === "wall" && draggingObjectMode.startsWith("wall-") && fixedWallEndpoint) {
     const movingPoint = snapWallEndpoint({ x: Math.round(planPoint.x), z: Math.round(planPoint.z) }, selected.id);
     if (draggingObjectMode === "wall-start") setWallFromEndpoints(selected, movingPoint, fixedWallEndpoint);
     else setWallFromEndpoints(selected, fixedWallEndpoint, movingPoint);
@@ -3614,7 +4187,10 @@ function endObjectDrag(event) {
   }
   draggingObjectId = null;
   draggingObjectMode = "move";
+  activeDragPlaneY = officeElevation;
   fixedWallEndpoint = null;
+  roofResizeStart = null;
+  roofResizeStartClientY = 0;
   controls.enabled = true;
   canvas.releasePointerCapture?.(event.pointerId);
   commitHistoryAction();

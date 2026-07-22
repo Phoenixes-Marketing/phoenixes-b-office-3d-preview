@@ -13,53 +13,63 @@
           <strong>封王實業288號</strong>
           <span>2026/07</span>
         </div>
-        <div class="tools">
-          <button id="resetView" class="icon-button" type="button" title="重置視角" aria-label="重置視角" data-lucide="rotate-ccw"></button>
-          <button id="topView" class="icon-button" type="button" title="俯視" aria-label="俯視" data-lucide="scan"></button>
-          <button id="toggleWallHeight" class="icon-button" type="button" title="牆面高度" aria-label="牆面高度" aria-expanded="false" aria-controls="wallHeightPanel" data-lucide="move-vertical"></button>
-          <button id="toggleRoof" class="icon-button" type="button" title="顯示／隱藏雙坡屋頂" aria-label="顯示／隱藏雙坡屋頂" data-lucide="house"></button>
-          <button id="toggleCadView" class="icon-button" type="button" title="黑白線條俯視圖" aria-label="黑白線條俯視圖" data-lucide="drafting-compass"></button>
-          <button id="toggleDoorOpen" class="icon-button is-active" type="button" title="將門片關閉展示" aria-label="將門片關閉展示" data-lucide="door-open"></button>
-          <button id="toggleFurniture" class="icon-button is-active" type="button" title="顯示/隱藏家具" aria-label="顯示/隱藏家具" data-lucide="eye-off"></button>
-          <button id="toggleColumnEditor" class="icon-button" type="button" title="物件編輯" aria-label="物件編輯" aria-expanded="false" aria-controls="columnEditor" data-lucide="pencil"></button>
-          <button id="togglePlanStorage" class="icon-button" type="button" title="調整方案" aria-label="調整方案" aria-expanded="false" aria-controls="planStoragePanel" data-lucide="save"></button>
-          <button id="toggleLabels" class="icon-button is-active" type="button" title="標籤" aria-label="標籤" data-lucide="tags"></button>
+        <div class="tools" aria-label="模型工具列">
+          <div class="tool-group" aria-label="視角工具">
+            <button id="resetView" class="icon-button" type="button" title="重置視角" aria-label="重置視角"><i data-lucide="rotate-ccw"></i><span>重置</span></button>
+            <button id="topView" class="icon-button" type="button" title="切換俯視視角" aria-label="切換俯視視角"><i data-lucide="scan"></i><span>俯視</span></button>
+            <button id="toggleCadView" class="icon-button" type="button" title="切換黑白 2D 平面圖" aria-label="切換黑白 2D 平面圖"><i data-lucide="drafting-compass"></i><span>2D 圖</span></button>
+          </div>
+          <div class="tool-group" aria-label="顯示工具">
+            <button id="toggleRoof" class="icon-button is-active" type="button" title="隱藏平屋頂" aria-label="隱藏平屋頂" aria-pressed="true"><i data-lucide="house"></i><span>屋頂</span></button>
+            <button id="toggleWallHeight" class="icon-button" type="button" title="調整牆面與柱子高度" aria-label="調整牆面與柱子高度" aria-expanded="false" aria-controls="wallHeightPanel"><i data-lucide="ruler"></i><span>高度</span></button>
+            <button id="toggleDoorOpen" class="icon-button is-active" type="button" title="將門片關閉展示" aria-label="將門片關閉展示"><i data-lucide="door-open"></i><span>門片</span></button>
+            <button id="toggleFurniture" class="icon-button is-active" type="button" title="隱藏家具" aria-label="隱藏家具"><i data-lucide="armchair"></i><span>家具</span></button>
+            <button id="toggleLabels" class="icon-button" type="button" title="顯示空間標籤" aria-label="顯示空間標籤" aria-pressed="false"><i data-lucide="tags"></i><span>標籤</span></button>
+          </div>
+          <div class="tool-group" aria-label="編輯工具">
+            <button id="toggleColumnEditor" class="icon-button" type="button" title="開啟物件編輯" aria-label="開啟物件編輯" aria-expanded="false" aria-controls="columnEditor"><i data-lucide="pencil"></i><span>編輯</span></button>
+            <button id="togglePlanStorage" class="icon-button" type="button" title="開啟版本與備份" aria-label="開啟版本與備份" aria-expanded="false" aria-controls="planStoragePanel"><i data-lucide="save"></i><span>版本</span></button>
+          </div>
         </div>
       </header>
       <section class="hud panel wall-height-panel" id="wallHeightPanel" hidden>
         <label class="wall-height-control">
-          <span><i class="wall-swatch wall-swatch--exterior" aria-hidden="true"></i>外牆 <output id="exteriorWallHeightValue">5.00m</output></span>
-          <input id="exteriorWallHeight" type="number" min="1.5" max="6" step="0.05" value="5" inputmode="decimal" aria-label="外牆高度公尺" />
+          <span><i class="wall-swatch wall-swatch--exterior" aria-hidden="true"></i>外牆 <output id="exteriorWallHeightValue">5.60m</output></span>
+          <input id="exteriorWallHeight" type="number" min="1.5" max="6" step="0.05" value="5.6" inputmode="decimal" aria-label="外牆高度公尺" />
         </label>
         <label class="wall-height-control">
           <span><i class="wall-swatch wall-swatch--interior" aria-hidden="true"></i>隔間 <output id="wallHeightValue">3.00m</output></span>
           <input id="wallHeight" type="number" min="1.5" max="6" step="0.05" value="3" inputmode="decimal" aria-label="隔間牆高度公尺" />
         </label>
+        <label class="wall-height-control">
+          <span><i class="wall-swatch wall-swatch--column" aria-hidden="true"></i>全部柱子 <output id="columnHeightValue">5.60m</output></span>
+          <input id="columnHeight" type="number" min="1.5" max="10" step="0.05" value="5.6" inputmode="decimal" aria-label="全部柱子高度公尺" />
+        </label>
       </section>
       <section class="hud plan-storage-panel" id="planStoragePanel" hidden>
         <div class="plan-storage__header">
           <div class="plan-storage__title">
-            <strong>方案管理</strong>
-            <span id="planStorageStatus" aria-live="polite">原始格局（永久鎖定）</span>
+            <strong>版本與備份</strong>
+            <span id="planStorageStatus" aria-live="polite">系統基準（不可覆寫）</span>
           </div>
-          <button id="closePlanStorage" class="mini-icon-button" type="button" title="關閉調整方案" aria-label="關閉調整方案" data-lucide="x"></button>
+          <button id="closePlanStorage" class="mini-icon-button" type="button" title="關閉版本與備份" aria-label="關閉版本與備份" data-lucide="x"></button>
         </div>
         <div class="scheme-toolbar">
-          <select id="schemeSelect" aria-label="選擇方案">
-            <option value="original">原始格局（鎖定）</option>
+          <select id="schemeSelect" aria-label="選擇版本">
+            <option value="original">系統基準（不可覆寫）</option>
           </select>
           <div class="scheme-toolbar__actions">
-            <button id="newScheme" type="button" title="新增方案" aria-label="新增方案"><i data-lucide="plus"></i></button>
-            <button id="renameScheme" type="button" title="重新命名方案" aria-label="重新命名方案"><i data-lucide="pencil"></i></button>
-            <button id="deleteScheme" type="button" title="刪除方案" aria-label="刪除方案"><i data-lucide="trash-2"></i></button>
+            <button id="newScheme" type="button" title="以目前畫面新增版本" aria-label="以目前畫面新增版本"><i data-lucide="plus"></i></button>
+            <button id="renameScheme" type="button" title="重新命名版本" aria-label="重新命名版本"><i data-lucide="pencil"></i></button>
+            <button id="deleteScheme" type="button" title="刪除版本" aria-label="刪除版本"><i data-lucide="trash-2"></i></button>
           </div>
         </div>
         <div class="plan-storage__actions">
-          <button id="saveDraft" type="button"><i data-lucide="save"></i><span>儲存方案</span></button>
-          <button id="loadDraft" type="button"><i data-lucide="folder-open"></i><span>載入方案</span></button>
-          <button id="exportPlan" type="button"><i data-lucide="file-down"></i><span>匯出方案</span></button>
-          <button id="importPlan" type="button"><i data-lucide="file-up"></i><span>匯入方案</span></button>
-          <button id="restoreOriginal" class="plan-storage__restore" type="button"><i data-lucide="history"></i><span>恢復原始</span></button>
+          <button id="saveDraft" type="button" title="用目前畫面更新選取的版本"><i data-lucide="save"></i><span>儲存目前版本</span></button>
+          <button id="loadDraft" type="button" title="將選取的版本套用到目前畫面"><i data-lucide="folder-open"></i><span>套用所選版本</span></button>
+          <button id="exportPlan" type="button" title="將目前畫面下載成 JSON 備份檔"><i data-lucide="download"></i><span>下載備份檔</span></button>
+          <button id="importPlan" type="button" title="從 JSON 備份檔建立新版本"><i data-lucide="upload"></i><span>從備份檔新增</span></button>
+          <button id="restoreOriginal" class="plan-storage__restore" type="button" title="恢復網站內建基準；不刪除已儲存版本"><i data-lucide="history"></i><span>回到系統基準</span></button>
         </div>
         <input id="importPlanFile" class="visually-hidden" type="file" accept=".json,application/json" />
       </section>
@@ -67,7 +77,7 @@
         <div class="column-editor__header">
           <div class="column-editor__title">
             <strong>物件編輯</strong>
-            <span id="columnHint">點選牆、柱、門、窗或家具</span>
+            <span id="columnHint">點選屋頂、牆、柱、門、窗或家具</span>
           </div>
           <div class="column-editor__header-actions">
             <button id="undoEdit" class="mini-icon-button" type="button" title="復原" aria-label="復原" disabled><i data-lucide="undo-2"></i></button>
@@ -94,11 +104,11 @@
             <button id="resetColumns" class="object-tool-button" type="button" title="重設全部柱子" aria-label="重設全部柱子"><i data-lucide="rotate-ccw"></i></button>
           </div>
           <div class="column-fields">
-            <label>
+            <label id="columnXField">
               <span id="columnXLabel">X cm</span>
               <input id="columnX" type="number" step="1" />
             </label>
-            <label>
+            <label id="columnZField">
               <span id="columnZLabel">Z cm</span>
               <input id="columnZ" type="number" step="1" />
             </label>
@@ -110,11 +120,11 @@
               <span id="columnDLabel">深 cm</span>
               <input id="columnD" type="number" min="1" step="1" />
             </label>
-            <label>
+            <label id="objectHeightField">
               <span id="objectHeightLabel">高 cm</span>
               <input id="objectHeight" type="number" min="1" max="1000" step="1" />
             </label>
-            <label>
+            <label id="objectRotationField">
               <span>角度 °</span>
               <input id="objectRotation" type="number" step="1" />
             </label>
