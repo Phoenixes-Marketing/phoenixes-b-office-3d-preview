@@ -70,7 +70,7 @@ const columnXField = document.querySelector("#columnXField");
 const columnZField = document.querySelector("#columnZField");
 const columnDField = document.querySelector("#columnDField");
 const objectEditorInputs = [...Object.values(columnInputs), objectHeightInput, objectRotationInput, objectVerticalInput];
-const deferredEditorInputs = new Set([columnInputs.w, columnInputs.d, objectHeightInput, objectVerticalInput]);
+const deferredEditorInputs = new Set([columnInputs.w, columnInputs.d, objectHeightInput, objectRotationInput, objectVerticalInput]);
 const pendingEditorInputs = new WeakSet();
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
@@ -97,6 +97,24 @@ controls.maxPolarAngle = Math.PI * 0.49;
 controls.touches.ONE = THREE.TOUCH.ROTATE;
 controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
 
+const cadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 220);
+cadCamera.up.set(0, 0, -1);
+const cadControls = new OrbitControls(cadCamera, renderer.domElement);
+cadControls.enabled = false;
+cadControls.enableDamping = true;
+cadControls.dampingFactor = 0.1;
+cadControls.enableRotate = false;
+cadControls.enablePan = true;
+cadControls.enableZoom = true;
+cadControls.screenSpacePanning = true;
+cadControls.minZoom = 0.45;
+cadControls.maxZoom = 8;
+cadControls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+cadControls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+cadControls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+cadControls.touches.ONE = THREE.TOUCH.PAN;
+cadControls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -114,6 +132,7 @@ const STANDARD_DOOR_WIDTH_CM = 90;
 const STANDARD_DOOR_HEIGHT_CM = 210;
 const STANDARD_DOOR_THICKNESS_CM = 5;
 const WALL_ENDPOINT_SNAP_CM = 20;
+const WALL_ANGLE_STEP_DEG = 45;
 const DEFAULT_WALL_THICKNESS_CM = 14;
 const DEFAULT_INTERIOR_WALL_HEIGHT_CM = 300;
 const DEFAULT_EXTERIOR_WALL_HEIGHT_CM = 560;
@@ -136,8 +155,9 @@ const fixtureGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
 const cadGroup = new THREE.Group();
 const roofGroup = new THREE.Group();
+const interiorLightGroup = new THREE.Group();
 const interactionGroup = new THREE.Group();
-root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, cadGroup, interactionGroup);
+root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, interiorLightGroup, cadGroup, interactionGroup);
 
 const materials = {
   siteGround: new THREE.MeshStandardMaterial({ color: 0xe5e8e4, roughness: 0.86 }),
@@ -649,6 +669,7 @@ function makeEditableFootprints(items, type, defaultHeightCm) {
     const rawDepth = Math.abs(z1 - z0);
     const isSegment = item.shape === "segment";
     const isHorizontal = rawWidth >= rawDepth;
+    const rotation = isSegment ? (Math.atan2(z1 - z0, x1 - x0) * 180) / Math.PI : (isHorizontal ? 0 : 90);
     return {
       id,
       __id: id,
@@ -659,7 +680,7 @@ function makeEditableFootprints(items, type, defaultHeightCm) {
       w: isSegment ? Math.hypot(x1 - x0, z1 - z0) : Math.max(rawWidth, rawDepth),
       d: isSegment ? Number(item.thicknessCm ?? 14) : Math.max(Math.min(rawWidth, rawDepth), type === "column" ? 10 : 4),
       h: Number(item.h ?? item.heightCm ?? defaultHeightCm),
-      rot: isSegment ? (Math.atan2(z1 - z0, x1 - x0) * 180) / Math.PI : (isHorizontal ? 0 : 90),
+      rot: type === "wall" ? snapWallAngle(rotation) : normalizeAngle(Math.round(rotation)),
       source: typeof item.source === "string" ? item.source : `${type}-${index + 1}`,
     };
   });
@@ -979,6 +1000,7 @@ function bindControls() {
   toggleFurnitureButton?.addEventListener("click", () => {
     furnitureVisible = !furnitureVisible;
     furnitureGroup.visible = furnitureVisible && !cadMode;
+    fixtureGroup.visible = furnitureVisible && !cadMode;
     toggleFurnitureButton.classList.toggle("is-active", furnitureVisible);
     toggleFurnitureButton.setAttribute("aria-pressed", String(furnitureVisible));
     toggleFurnitureButton.setAttribute("aria-label", furnitureVisible ? "隱藏家具" : "顯示家具");
@@ -1089,6 +1111,9 @@ function bindControls() {
   canvas.addEventListener("pointermove", dragSelectedObject);
   canvas.addEventListener("pointerup", endObjectDrag);
   canvas.addEventListener("pointercancel", endObjectDrag);
+  window.addEventListener("pointerup", endObjectDrag);
+  window.addEventListener("pointercancel", endObjectDrag);
+  window.addEventListener("mouseup", endObjectDrag);
   window.addEventListener("resize", resize);
 }
 
@@ -1108,6 +1133,36 @@ function setupLights() {
   const warm = new THREE.PointLight(0xfff1d0, 0.8, 25);
   warm.position.set(5, 5, 3);
   scene.add(warm);
+
+  interiorLightGroup.add(new THREE.AmbientLight(0xfff8e9, 0.55));
+  const { building } = CONSTRUCTION_PLAN;
+  const lightPositions = [
+    [0.18, 0.27],
+    [0.5, 0.27],
+    [0.82, 0.27],
+    [0.18, 0.73],
+    [0.5, 0.73],
+    [0.82, 0.73],
+  ];
+  lightPositions.forEach(([xRatio, zRatio], index) => {
+    const planX = building.x0 + (building.x1 - building.x0) * xRatio;
+    const planZ = building.z0 + (building.z1 - building.z0) * zRatio;
+    const position = toWorld(planX, planZ);
+    const light = new THREE.PointLight(0xfff3d8, 22, 10, 1.8);
+    light.position.set(position.x, officeElevation + 2.65, position.z);
+    if (index === 4) {
+      light.castShadow = true;
+      light.shadow.mapSize.set(512, 512);
+      light.shadow.bias = -0.0015;
+      light.shadow.normalBias = 0.025;
+    }
+    interiorLightGroup.add(light);
+  });
+  syncInteriorLightingVisibility();
+}
+
+function syncInteriorLightingVisibility() {
+  interiorLightGroup.visible = roofVisible && !cadMode;
 }
 
 function buildScene() {
@@ -1331,6 +1386,7 @@ function rebuildRoofPreview() {
   mesh.receiveShadow = true;
   roofGroup.add(mesh);
   roofGroup.visible = roofVisible && !cadMode;
+  syncInteriorLightingVisibility();
   if (roofVisible && !cadMode) {
     registerEditableObject(
       editableRoof,
@@ -1437,11 +1493,14 @@ function setEditableMetrics(item, metrics) {
   if (!["door", "window"].includes(item.type)) {
     item.d = Math.round(Math.max(Number(metrics.d) || item.d, minimumDepth));
   }
-  const maximumHeight = item.type === "column" ? 1000 : item.type === "wall" ? 600 : 500;
+  const maximumHeight = item.type === "column"
+    ? 1000
+    : ["wall", "door", "window"].includes(item.type)
+      ? 600
+      : 500;
   item.h = Math.round(Math.min(maximumHeight, Math.max(Number(metrics.h) || item.h, minimumHeight)));
-  item.rot = item.type === "roof"
-    ? 0
-    : normalizeAngle(Math.round(Number.isFinite(Number(metrics.rot)) ? Number(metrics.rot) : item.rot ?? 0));
+  const nextRotation = Number.isFinite(Number(metrics.rot)) ? Number(metrics.rot) : item.rot ?? 0;
+  item.rot = item.type === "roof" ? 0 : item.type === "wall" ? snapWallAngle(nextRotation) : normalizeAngle(Math.round(nextRotation));
   if (item.type === "window" && Number.isFinite(Number(metrics.sillCm))) item.sillCm = Math.max(0, Math.round(Number(metrics.sillCm)));
   if (item.type === "door" || item.type === "window") updateOpeningWallLink(item);
   if (item.type === "wall") {
@@ -1488,6 +1547,10 @@ function normalizeAngle(value) {
   return angle;
 }
 
+function snapWallAngle(value) {
+  return normalizeAngle(Math.round((Number(value) || 0) / WALL_ANGLE_STEP_DEG) * WALL_ANGLE_STEP_DEG);
+}
+
 function getWallEndpoints(wall) {
   const angle = ((wall.rot ?? 0) * Math.PI) / 180;
   const halfX = Math.cos(angle) * wall.w * 0.5;
@@ -1498,15 +1561,24 @@ function getWallEndpoints(wall) {
   };
 }
 
-function setWallFromEndpoints(wall, start, end) {
+function setWallFromEndpoints(wall, start, end, { anchor = "start" } = {}) {
   const dx = end.x - start.x;
   const dz = end.z - start.z;
   const length = Math.max(10, Math.hypot(dx, dz));
   if (length <= 10 && Math.hypot(dx, dz) < 1) return;
-  wall.x = Math.round((start.x + end.x) / 2);
-  wall.z = Math.round((start.z + end.z) / 2);
+  const angle = snapWallAngle((Math.atan2(dz, dx) * 180) / Math.PI);
+  const radians = (angle * Math.PI) / 180;
+  const axis = { x: Math.cos(radians), z: Math.sin(radians) };
+  const snappedStart = anchor === "end"
+    ? { x: end.x - axis.x * length, z: end.z - axis.z * length }
+    : start;
+  const snappedEnd = anchor === "end"
+    ? end
+    : { x: start.x + axis.x * length, z: start.z + axis.z * length };
+  wall.x = Math.round((snappedStart.x + snappedEnd.x) / 2);
+  wall.z = Math.round((snappedStart.z + snappedEnd.z) / 2);
   wall.w = Math.round(length);
-  wall.rot = normalizeAngle(Math.round((Math.atan2(dz, dx) * 180) / Math.PI));
+  wall.rot = angle;
 }
 
 function getWallAxis(wall) {
@@ -1557,7 +1629,13 @@ function mergeWallPair(target, source, walls = editableWalls, doors = editableDo
   return target;
 }
 
-function mergeTouchingCollinearWalls(maxGapCm = WALL_ENDPOINT_SNAP_CM, walls = editableWalls, doors = editableDoors, windows = editableWindows) {
+function mergeTouchingCollinearWalls(
+  maxGapCm = WALL_ENDPOINT_SNAP_CM,
+  walls = editableWalls,
+  doors = editableDoors,
+  windows = editableWindows,
+  candidateWallId = null,
+) {
   let merged = true;
   while (merged) {
     merged = false;
@@ -1565,18 +1643,23 @@ function mergeTouchingCollinearWalls(maxGapCm = WALL_ENDPOINT_SNAP_CM, walls = e
       for (let j = i + 1; j < walls.length; j += 1) {
         const first = walls[i];
         const second = walls[j];
+        if (candidateWallId && first.id !== candidateWallId && second.id !== candidateWallId) continue;
         if (inferWallCategory(first) !== inferWallCategory(second)) continue;
         if (Math.abs(first.d - second.d) > 1 || Math.abs(first.h - second.h) > 1) continue;
-        if (!areWallsCollinear(first, second, Math.max(6, (first.d + second.d) / 2))) continue;
+        if (!areWallsCollinear(first, second, 2)) continue;
         const axis = getWallAxis(first);
         const gap = getIntervalGap(getWallIntervalOnAxis(first, axis), getWallIntervalOnAxis(second, axis));
         if (gap > maxGapCm) continue;
-        mergeWallPair(first, second, walls, doors, windows);
+        const target = candidateWallId === second.id ? second : first;
+        const source = target === first ? second : first;
+        mergeWallPair(target, source, walls, doors, windows);
+        if (candidateWallId) candidateWallId = target.id;
         merged = true;
         break;
       }
     }
   }
+  return candidateWallId;
 }
 
 function bridgeWallSegmentsAtDoors(walls = editableWalls, doors = editableDoors, windows = editableWindows) {
@@ -2758,6 +2841,26 @@ function addUrinal(item) {
   group.add(bowl);
 }
 
+function getActiveCamera() {
+  return cadMode ? cadCamera : camera;
+}
+
+function getActiveControls() {
+  return cadMode ? cadControls : controls;
+}
+
+function updateCadCameraFrustum() {
+  const aspect = Math.max(window.innerWidth / Math.max(window.innerHeight, 1), 0.25);
+  const width = (bounds.x1 - bounds.x0 + 420) / 100;
+  const depth = (bounds.z1 - bounds.z0 + 420) / 100;
+  const visibleHeight = Math.max(depth, width / aspect) * 1.08;
+  cadCamera.left = (-visibleHeight * aspect) / 2;
+  cadCamera.right = (visibleHeight * aspect) / 2;
+  cadCamera.top = visibleHeight / 2;
+  cadCamera.bottom = -visibleHeight / 2;
+  cadCamera.updateProjectionMatrix();
+}
+
 function applyCadMode() {
   if (cadMode) {
     rebuildCadPlan();
@@ -2770,21 +2873,28 @@ function applyCadMode() {
     cadGroup.visible = true;
     scene.background = new THREE.Color(0xffffff);
     scene.fog = null;
+    renderer.shadowMap.enabled = false;
+    controls.enabled = false;
+    cadControls.enabled = true;
     toggleCadViewButton?.classList.add("is-active");
     setCameraPreset("cad");
   } else {
     floorGroup.visible = true;
     wallGroup.visible = true;
     furnitureGroup.visible = furnitureVisible;
-    fixtureGroup.visible = true;
+    fixtureGroup.visible = furnitureVisible;
     labelGroup.visible = labelsVisible;
     roofGroup.visible = roofVisible;
     cadGroup.visible = false;
     scene.background = defaultBackground.clone();
     scene.fog = defaultFog;
+    renderer.shadowMap.enabled = true;
+    cadControls.enabled = false;
+    controls.enabled = true;
     toggleCadViewButton?.classList.remove("is-active");
     setCameraPreset("default");
   }
+  syncInteriorLightingVisibility();
   rebuildWalls();
   updateStatus();
 }
@@ -3155,6 +3265,11 @@ function syncColumnEditor() {
   if (objectRotationInput && (wallOpeningSelected || roofSelected)) {
     objectRotationInput.disabled = true;
   }
+  if (objectRotationInput) {
+    objectRotationInput.step = descriptor?.type === "wall" ? String(WALL_ANGLE_STEP_DEG) : "1";
+    objectRotationInput.min = descriptor?.type === "wall" ? "-135" : "-180";
+    objectRotationInput.max = "180";
+  }
   columnEditor?.classList.toggle("is-roof-selected", roofSelected);
   if (columnXField) columnXField.hidden = roofSelected;
   if (columnZField) columnZField.hidden = roofSelected;
@@ -3243,7 +3358,8 @@ function syncColumnEditor() {
 }
 
 function addColumnAtViewTarget() {
-  const target = toPlan(controls.target.x, controls.target.z);
+  const activeControls = getActiveControls();
+  const target = toPlan(activeControls.target.x, activeControls.target.z);
   const selected = getSelectedColumn();
   const size = selected ? getColumnMetrics(selected) : { w: 50, d: 50 };
   const id = createObjectId("column");
@@ -3273,7 +3389,8 @@ function addEditableObjectAtViewTarget(type) {
     addColumnAtViewTarget();
     return;
   }
-  const target = toPlan(controls.target.x, controls.target.z);
+  const activeControls = getActiveControls();
+  const target = toPlan(activeControls.target.x, activeControls.target.z);
   const id = createObjectId(type);
   if (type === "wall") {
     const wall = {
@@ -3515,7 +3632,7 @@ function normalizeEditableItems(items, type, limit = 200) {
       w: Math.round(numeric.w),
       d: Math.round(numeric.d),
       h: Math.round(Math.min(numeric.h, type === "column" ? 1000 : ["wall", "door", "window"].includes(type) ? 600 : 500)),
-      rot: type === "roof" ? 0 : normalizeAngle(Math.round(numeric.rot)),
+      rot: type === "roof" ? 0 : type === "wall" ? snapWallAngle(numeric.rot) : normalizeAngle(Math.round(numeric.rot)),
       source: typeof item.source === "string" ? item.source.slice(0, 120) : `imported-${type}`,
     };
     if (type === "door") {
@@ -3650,7 +3767,8 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   selectedObject = previousSelection && getEditableObjectById(previousSelection.id, previousSelection.type) ? previousSelection : null;
   selectedColumnId = selectedObject?.type === "column" ? selectedObject.id : null;
   draggingObjectId = null;
-  controls.enabled = true;
+  controls.enabled = !cadMode;
+  cadControls.enabled = cadMode;
   if (clearHistory) clearEditHistory();
   updateWallHeightLabel();
   rebuildFurniture();
@@ -4058,6 +4176,11 @@ function updateSelectedObjectFromFields() {
     rot: Number(objectRotationInput.value),
     sillCm: Number(objectVerticalInput?.value),
   });
+  if (selected.type === "wall") {
+    const mergedWallId = mergeTouchingCollinearWalls(1, editableWalls, editableDoors, editableWindows, selected.id);
+    if (mergedWallId) selectedObject = { id: mergedWallId, type: "wall" };
+    refreshOpeningWallLinks();
+  }
   if (selected.type === "furniture") rebuildFurniture();
   rebuildWalls();
 }
@@ -4066,7 +4189,7 @@ function setPointerFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-  raycaster.setFromCamera(pointer, camera);
+  raycaster.setFromCamera(pointer, getActiveCamera());
 }
 
 function getObjectHitFromEvent(event) {
@@ -4104,8 +4227,14 @@ function startObjectInteraction(event) {
   const objectId = hit.object.userData.objectId;
   const descriptor = objectDescriptors.get(objectId);
   if (!descriptor) return;
+  const isCurrentSelection = selectedObject?.id === objectId && selectedObject?.type === descriptor.type;
   selectedObject = { id: objectId, type: descriptor.type };
   selectedColumnId = descriptor.type === "column" ? objectId : null;
+
+  if (!isCurrentSelection) {
+    rebuildWalls();
+    return;
+  }
 
   const selected = getSelectedEditableObject();
   const roofResizeAxis = hit.object.userData.roofResizeAxis;
@@ -4140,7 +4269,7 @@ function startObjectInteraction(event) {
       };
     }
     draggingObjectId = selected.id;
-    controls.enabled = false;
+    getActiveControls().enabled = false;
     canvas.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   }
@@ -4161,8 +4290,8 @@ function dragSelectedObject(event) {
     setEditableMetrics(selected, metrics);
   } else if (selected.type === "wall" && draggingObjectMode.startsWith("wall-") && fixedWallEndpoint) {
     const movingPoint = snapWallEndpoint({ x: Math.round(planPoint.x), z: Math.round(planPoint.z) }, selected.id);
-    if (draggingObjectMode === "wall-start") setWallFromEndpoints(selected, movingPoint, fixedWallEndpoint);
-    else setWallFromEndpoints(selected, fixedWallEndpoint, movingPoint);
+    if (draggingObjectMode === "wall-start") setWallFromEndpoints(selected, movingPoint, fixedWallEndpoint, { anchor: "end" });
+    else setWallFromEndpoints(selected, fixedWallEndpoint, movingPoint, { anchor: "start" });
     refreshOpeningWallLinks();
   } else {
     setEditableMetrics(selected, {
@@ -4180,8 +4309,9 @@ function dragSelectedObject(event) {
 function endObjectDrag(event) {
   if (!draggingObjectId) return;
   const dragged = getEditableObjectById(draggingObjectId);
-  if (dragged?.type === "wall" && draggingObjectMode.startsWith("wall-")) {
-    mergeTouchingCollinearWalls();
+  if (dragged?.type === "wall") {
+    const mergedWallId = mergeTouchingCollinearWalls(1, editableWalls, editableDoors, editableWindows, dragged.id);
+    if (mergedWallId) selectedObject = { id: mergedWallId, type: "wall" };
     refreshOpeningWallLinks();
     rebuildWalls();
   }
@@ -4191,8 +4321,8 @@ function endObjectDrag(event) {
   fixedWallEndpoint = null;
   roofResizeStart = null;
   roofResizeStartClientY = 0;
-  controls.enabled = true;
-  canvas.releasePointerCapture?.(event.pointerId);
+  getActiveControls().enabled = true;
+  if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
   commitHistoryAction();
   updateStatus();
 }
@@ -4247,18 +4377,19 @@ function roundRect(ctx, x, y, width, height, radius) {
 function setCameraPreset(preset) {
   const buildingTarget = toWorld(1377.5, 815);
   const siteTarget = toWorld((bounds.x0 + bounds.x1) / 2, (bounds.z0 + bounds.z1) / 2);
+  if (cadMode || preset === "cad") {
+    updateCadCameraFrustum();
+    cadCamera.zoom = 1;
+    cadCamera.position.set(siteTarget.x, 80, siteTarget.z);
+    cadCamera.up.set(0, 0, -1);
+    cadControls.target.set(siteTarget.x, officeElevation, siteTarget.z);
+    cadCamera.updateProjectionMatrix();
+    cadControls.update();
+    return;
+  }
   if (preset === "top") {
     camera.position.set(buildingTarget.x, 42, buildingTarget.z + 0.01);
     controls.target.set(buildingTarget.x, officeElevation, buildingTarget.z);
-  } else if (preset === "cad") {
-    const verticalFov = (camera.fov * Math.PI) / 180;
-    const width = (bounds.x1 - bounds.x0 + 420) / 100;
-    const depth = (bounds.z1 - bounds.z0 + 420) / 100;
-    const heightForDepth = depth / (2 * Math.tan(verticalFov / 2));
-    const heightForWidth = width / (2 * Math.tan(verticalFov / 2) * Math.max(camera.aspect, 0.25));
-    const cameraHeight = Math.max(42, heightForDepth, heightForWidth) * 1.08;
-    camera.position.set(siteTarget.x, cameraHeight, siteTarget.z + 0.001);
-    controls.target.set(siteTarget.x, officeElevation, siteTarget.z);
   } else if (preset === "walk") {
     camera.position.set(buildingTarget.x - 5.4, 2.8, buildingTarget.z + 4.5);
     controls.target.set(buildingTarget.x + 2.4, officeElevation + 0.9, buildingTarget.z - 0.5);
@@ -4312,11 +4443,12 @@ function resize() {
   const height = window.innerHeight;
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  updateCadCameraFrustum();
   renderer.setSize(width, height, false);
 }
 
 function animate() {
-  controls.update();
-  renderer.render(scene, camera);
+  getActiveControls().update();
+  renderer.render(scene, getActiveCamera());
   requestAnimationFrame(animate);
 }
