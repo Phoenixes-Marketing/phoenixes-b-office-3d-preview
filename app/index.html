@@ -27,6 +27,8 @@
             <button id="toggleLabels" class="icon-button" type="button" title="顯示空間標籤" aria-label="顯示空間標籤" aria-pressed="false"><i data-lucide="tags"></i><span>標籤</span></button>
           </div>
           <div class="tool-group" aria-label="編輯工具">
+            <button id="toggleCanopyEditor" class="icon-button" type="button" title="開啟遮雨棚編輯" aria-label="開啟遮雨棚編輯" aria-expanded="false" aria-controls="canopyEditor"><i data-lucide="umbrella"></i><span>雨棚</span></button>
+            <button id="toggleSignEditor" class="icon-button" type="button" title="開啟屋頂招牌編輯" aria-label="開啟屋頂招牌編輯" aria-expanded="false" aria-controls="signEditor"><i data-lucide="type"></i><span>招牌</span></button>
             <button id="toggleColumnEditor" class="icon-button" type="button" title="開啟物件編輯" aria-label="開啟物件編輯" aria-expanded="false" aria-controls="columnEditor"><i data-lucide="pencil"></i><span>編輯</span></button>
             <button id="togglePlanStorage" class="icon-button" type="button" title="開啟版本與備份" aria-label="開啟版本與備份" aria-expanded="false" aria-controls="planStoragePanel"><i data-lucide="save"></i><span>版本</span></button>
           </div>
@@ -72,6 +74,85 @@
           <button id="restoreOriginal" class="plan-storage__restore" type="button" title="恢復網站內建基準；不刪除已儲存版本"><i data-lucide="history"></i><span>回到系統基準</span></button>
         </div>
         <input id="importPlanFile" class="visually-hidden" type="file" accept=".json,application/json" />
+      </section>
+      <section class="hud canopy-editor" id="canopyEditor" hidden>
+        <div class="canopy-editor__header">
+          <div class="canopy-editor__title">
+            <strong>遮雨棚編輯</strong>
+            <span id="canopyStructureHint">兩種結構可分別調整</span>
+          </div>
+          <button id="closeCanopyEditor" class="mini-icon-button" type="button" title="關閉遮雨棚編輯" aria-label="關閉遮雨棚編輯"><i data-lucide="x"></i></button>
+        </div>
+        <div class="canopy-editor__selector">
+          <label>
+            <span>目前雨棚</span>
+            <select id="canopySelect" aria-label="選擇要編輯的遮雨棚"></select>
+          </label>
+          <label>
+            <span>棚頂／結構</span>
+            <select id="canopyStyle" aria-label="選擇遮雨棚結構樣式">
+              <option value="cantilever">後柱懸臂單斜棚</option>
+              <option value="four-post">平頂蓋棚</option>
+            </select>
+          </label>
+        </div>
+        <div class="canopy-fields">
+          <label><span>水平 X cm</span><input id="canopyX" type="number" step="10" /></label>
+          <label><span>水平 Z cm</span><input id="canopyZ" type="number" step="10" /></label>
+          <label><span>雨棚寬 cm</span><input id="canopyWidth" type="number" min="180" max="2600" step="10" /></label>
+          <label><span>出挑深 cm</span><input id="canopyDepth" type="number" min="180" max="2600" step="10" /></label>
+          <label><span>柱高 cm</span><input id="canopyHeight" type="number" min="220" max="600" step="5" /></label>
+          <label id="canopyRoofRiseField"><span id="canopyRoofRiseLabel">斜面落差 cm</span><input id="canopyRoofRise" type="number" min="20" max="180" step="5" /></label>
+          <label><span>柱列寬 cm</span><input id="canopyPostSpread" type="number" min="120" max="2500" step="10" /></label>
+          <label><span id="canopyPostInsetLabel">後柱離牆 cm</span><input id="canopyPostInset" type="number" min="5" max="180" step="5" /></label>
+          <label>
+            <span id="canopyPostCountLabel">後柱數量</span>
+            <span class="canopy-stepper" aria-label="調整雨棚柱子數量">
+              <button id="decreaseCanopyPosts" type="button" title="減少一根柱子" aria-label="減少一根柱子">−</button>
+              <output id="canopyPostCount">4</output>
+              <button id="increaseCanopyPosts" type="button" title="增加一根柱子" aria-label="增加一根柱子">＋</button>
+            </span>
+          </label>
+          <label><span>柱子粗度 cm</span><input id="canopyPostSize" type="number" min="12" max="40" step="2" /></label>
+        </div>
+        <div class="canopy-drag-control">
+          <span>滑鼠拖柱方向</span>
+          <div class="canopy-axis-buttons" role="group" aria-label="柱子單軸拖曳方向">
+            <button id="canopyDragX" type="button" class="is-active" aria-pressed="true">X 單軸</button>
+            <button id="canopyDragZ" type="button" aria-pressed="false">Z 單軸</button>
+          </div>
+          <output id="canopyPostSelection">請直接點住一根柱子拖拉</output>
+        </div>
+        <p class="canopy-editor__note" id="canopyEditorNote">前緣不落柱；每一跨以斜面樑、後柱與下斜撐形成三角支撐。</p>
+        <div class="canopy-editor__actions">
+          <button id="focusCanopy" type="button"><i data-lucide="focus"></i><span>聚焦選取雨棚</span></button>
+          <button id="resetCanopies" type="button"><i data-lucide="rotate-ccw"></i><span>重設兩座範例</span></button>
+        </div>
+      </section>
+      <section class="hud sign-editor" id="signEditor" hidden>
+        <div class="sign-editor__header">
+          <div class="sign-editor__title">
+            <strong>屋頂招牌編輯</strong>
+            <span id="signFaceHint">南側立面｜Phoenixes＋封王實業</span>
+          </div>
+          <button id="closeSignEditor" class="mini-icon-button" type="button" title="關閉屋頂招牌編輯" aria-label="關閉屋頂招牌編輯"><i data-lucide="x"></i></button>
+        </div>
+        <label class="sign-editor__selector">
+          <span>目前招牌</span>
+          <select id="signSelect" aria-label="選擇要編輯的屋頂招牌"></select>
+        </label>
+        <div class="sign-fields">
+          <label><span>沿牆水平 cm</span><input id="signHorizontal" type="number" step="10" /></label>
+          <label><span>中心離底 cm</span><input id="signVertical" type="number" min="20" max="230" step="5" /></label>
+          <label><span>招牌寬 cm</span><input id="signWidth" type="number" min="200" max="1600" step="10" /></label>
+          <label><span>立體厚度 cm</span><input id="signDepth" type="number" min="3" max="30" step="1" /></label>
+          <label><span>背光強度</span><input id="signGlow" type="number" min="0" max="5" step="0.25" /></label>
+        </div>
+        <p class="sign-editor__note" id="signEditorNote">招牌只會沿著目前屋頂垂直面移動，不會離開牆面；顯示狀態跟隨屋頂。</p>
+        <div class="sign-editor__actions">
+          <button id="focusSign" type="button"><i data-lucide="focus"></i><span>聚焦選取招牌</span></button>
+          <button id="resetSigns" type="button"><i data-lucide="rotate-ccw"></i><span>重設兩面招牌</span></button>
+        </div>
       </section>
       <section class="hud column-editor" id="columnEditor" hidden>
         <div class="column-editor__header">

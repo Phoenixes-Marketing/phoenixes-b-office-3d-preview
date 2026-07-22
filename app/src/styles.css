@@ -211,6 +211,300 @@ body,
   padding: 10px;
 }
 
+.canopy-editor {
+  top: 82px;
+  right: 14px;
+  width: min(410px, calc(100vw - 28px));
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.canopy-editor[hidden] {
+  display: none;
+}
+
+.canopy-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canopy-editor__title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.canopy-editor__title strong {
+  font-size: 14px;
+}
+
+.canopy-editor__title span {
+  color: #63707a;
+  font-size: 12px;
+}
+
+.canopy-editor__selector {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 8px;
+}
+
+.canopy-editor__selector label,
+.canopy-fields label {
+  display: grid;
+  gap: 3px;
+  color: #51606a;
+  font-size: 12px;
+}
+
+.canopy-editor select,
+.canopy-editor input,
+.canopy-editor__actions button {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 8px;
+  color: #26343d;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.canopy-editor select,
+.canopy-editor input {
+  padding: 0 7px;
+}
+
+.canopy-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canopy-stepper {
+  display: grid;
+  grid-template-columns: 32px 1fr 32px;
+  min-height: 32px;
+  overflow: hidden;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.canopy-stepper button {
+  border: 0;
+  color: #26343d;
+  background: #edf1f1;
+  font: inherit;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.canopy-stepper button:disabled {
+  color: #9ca6aa;
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.canopy-stepper output {
+  display: grid;
+  place-items: center;
+  color: #26343d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canopy-drag-control {
+  display: grid;
+  grid-template-columns: auto 136px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(69, 82, 92, 0.16);
+  border-radius: 8px;
+  color: #51606a;
+  background: rgba(245, 247, 247, 0.86);
+  font-size: 11px;
+}
+
+.canopy-axis-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 7px;
+}
+
+.canopy-axis-buttons button {
+  min-height: 28px;
+  border: 0;
+  color: #4d5a62;
+  background: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.canopy-axis-buttons button + button {
+  border-left: 1px solid rgba(69, 82, 92, 0.2);
+}
+
+.canopy-axis-buttons button.is-active {
+  color: #ffffff;
+  background: #407d72;
+}
+
+#canopyPostSelection {
+  min-width: 0;
+  overflow: hidden;
+  color: #2f665e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canopy-editor__note {
+  margin: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: #44545e;
+  background: rgba(226, 240, 236, 0.76);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.canopy-editor__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.canopy-editor__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.canopy-editor__actions button:hover {
+  border-color: #5da392;
+  color: #1d6558;
+  background: #e2f0ec;
+}
+
+.canopy-editor__actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.sign-editor {
+  top: 82px;
+  right: 14px;
+  width: min(380px, calc(100vw - 28px));
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.sign-editor[hidden] {
+  display: none;
+}
+
+.sign-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sign-editor__title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sign-editor__title strong {
+  font-size: 14px;
+}
+
+.sign-editor__title span,
+.sign-editor__selector,
+.sign-fields label {
+  color: #51606a;
+  font-size: 12px;
+}
+
+.sign-editor__selector,
+.sign-fields label {
+  display: grid;
+  gap: 3px;
+}
+
+.sign-editor select,
+.sign-editor input,
+.sign-editor__actions button {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 8px;
+  color: #26343d;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.sign-editor select,
+.sign-editor input {
+  padding: 0 7px;
+}
+
+.sign-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sign-editor__note {
+  margin: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: #44545e;
+  background: rgba(237, 242, 240, 0.82);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.sign-editor__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sign-editor__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.sign-editor__actions button:hover {
+  border-color: #5da392;
+  color: #1d6558;
+  background: #e2f0ec;
+}
+
+.sign-editor__actions svg {
+  width: 15px;
+  height: 15px;
+}
+
 .plan-storage-panel {
   left: 14px;
   bottom: 14px;
@@ -623,6 +917,44 @@ body,
     right: 14px;
     width: auto;
     padding: 9px;
+  }
+
+  .canopy-editor {
+    top: auto;
+    bottom: 14px;
+    left: 14px;
+    right: 14px;
+    width: auto;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    padding: 9px;
+  }
+
+  .sign-editor {
+    top: auto;
+    bottom: 14px;
+    left: 14px;
+    right: 14px;
+    width: auto;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    padding: 9px;
+  }
+
+  .sign-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .canopy-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .canopy-drag-control {
+    grid-template-columns: auto 136px;
+  }
+
+  #canopyPostSelection {
+    grid-column: 1 / -1;
   }
 
   .object-toolbar {

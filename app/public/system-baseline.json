@@ -1,7 +1,7 @@
 {
   "format": "phoenixes-office-column-plan",
-  "schemaVersion": 6,
-  "savedAt": "2026-07-22T06:18:04.618Z",
+  "schemaVersion": 9,
+  "savedAt": "2026-07-22T09:14:57.601Z",
   "wallHeightM": 3,
   "exteriorWallHeightM": 5.6,
   "columnHeightM": 5.6,
@@ -1893,5 +1893,101 @@
     "h": 250,
     "rot": 0,
     "source": "純白平屋頂"
-  }
+  },
+  "canopies": [
+    {
+      "id": "canopy-cantilever",
+      "type": "canopy",
+      "kind": "canopy",
+      "style": "cantilever",
+      "source": "A｜後柱懸臂單斜棚",
+      "x": 1050,
+      "z": 1860,
+      "w": 2120,
+      "d": 380,
+      "h": 330,
+      "rot": 0,
+      "roofRise": 50,
+      "postSpread": 1620,
+      "postInset": 70,
+      "postCount": 3,
+      "postSize": 30,
+      "posts": [
+        {
+          "x": -810,
+          "z": -120
+        },
+        {
+          "x": 0,
+          "z": -120
+        },
+        {
+          "x": 810,
+          "z": -120
+        }
+      ]
+    },
+    {
+      "id": "canopy-four-post",
+      "type": "canopy",
+      "kind": "canopy",
+      "style": "four-post",
+      "source": "B｜平頂蓋棚",
+      "x": 3070,
+      "z": 640,
+      "w": 800,
+      "d": 480,
+      "h": 310,
+      "rot": 90,
+      "roofRise": 18,
+      "postSpread": 770,
+      "postInset": 25,
+      "postCount": 4,
+      "postSize": 30,
+      "posts": [
+        {
+          "x": -385,
+          "z": -215
+        },
+        {
+          "x": 385,
+          "z": -215
+        },
+        {
+          "x": -385,
+          "z": 215
+        },
+        {
+          "x": 385,
+          "z": 215
+        }
+      ]
+    }
+  ],
+  "signs": [
+    {
+      "id": "sign-south",
+      "type": "roof-sign",
+      "face": "south",
+      "source": "南側｜Phoenixes＋封王實業",
+      "u": 1065,
+      "v": 128,
+      "w": 640,
+      "depth": 12,
+      "glow": 1.25,
+      "includeChinese": true
+    },
+    {
+      "id": "sign-east",
+      "type": "roof-sign",
+      "face": "east",
+      "source": "東側｜Phoenixes",
+      "u": 485,
+      "v": 123,
+      "w": 600,
+      "depth": 10,
+      "glow": 1.25,
+      "includeChinese": false
+    }
+  ]
 }

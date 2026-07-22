@@ -17,6 +17,8 @@ const columnHeightValue = document.querySelector("#columnHeightValue");
 const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
+const toggleCanopyEditorButton = document.querySelector("#toggleCanopyEditor");
+const toggleSignEditorButton = document.querySelector("#toggleSignEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
 const toggleRoofButton = document.querySelector("#toggleRoof");
 const toggleDoorOpenButton = document.querySelector("#toggleDoorOpen");
@@ -54,6 +56,48 @@ const addObjectButton = document.querySelector("#addObject");
 const deleteObjectButton = document.querySelector("#deleteObject");
 const splitWallButton = document.querySelector("#splitWall");
 const flipDoorButton = document.querySelector("#flipDoor");
+const canopyEditor = document.querySelector("#canopyEditor");
+const closeCanopyEditorButton = document.querySelector("#closeCanopyEditor");
+const canopySelect = document.querySelector("#canopySelect");
+const canopyStyleSelect = document.querySelector("#canopyStyle");
+const canopyStructureHint = document.querySelector("#canopyStructureHint");
+const canopyEditorNote = document.querySelector("#canopyEditorNote");
+const canopyRoofRiseLabel = document.querySelector("#canopyRoofRiseLabel");
+const canopyPostInsetLabel = document.querySelector("#canopyPostInsetLabel");
+const canopyPostCountLabel = document.querySelector("#canopyPostCountLabel");
+const canopyPostCountOutput = document.querySelector("#canopyPostCount");
+const canopyPostSelectionOutput = document.querySelector("#canopyPostSelection");
+const decreaseCanopyPostsButton = document.querySelector("#decreaseCanopyPosts");
+const increaseCanopyPostsButton = document.querySelector("#increaseCanopyPosts");
+const canopyDragXButton = document.querySelector("#canopyDragX");
+const canopyDragZButton = document.querySelector("#canopyDragZ");
+const focusCanopyButton = document.querySelector("#focusCanopy");
+const resetCanopiesButton = document.querySelector("#resetCanopies");
+const canopyInputs = {
+  x: document.querySelector("#canopyX"),
+  z: document.querySelector("#canopyZ"),
+  w: document.querySelector("#canopyWidth"),
+  d: document.querySelector("#canopyDepth"),
+  h: document.querySelector("#canopyHeight"),
+  roofRise: document.querySelector("#canopyRoofRise"),
+  postSpread: document.querySelector("#canopyPostSpread"),
+  postInset: document.querySelector("#canopyPostInset"),
+  postSize: document.querySelector("#canopyPostSize"),
+};
+const signEditor = document.querySelector("#signEditor");
+const closeSignEditorButton = document.querySelector("#closeSignEditor");
+const signSelect = document.querySelector("#signSelect");
+const signFaceHint = document.querySelector("#signFaceHint");
+const signEditorNote = document.querySelector("#signEditorNote");
+const focusSignButton = document.querySelector("#focusSign");
+const resetSignsButton = document.querySelector("#resetSigns");
+const signInputs = {
+  u: document.querySelector("#signHorizontal"),
+  v: document.querySelector("#signVertical"),
+  w: document.querySelector("#signWidth"),
+  depth: document.querySelector("#signDepth"),
+  glow: document.querySelector("#signGlow"),
+};
 const columnInputs = {
   x: document.querySelector("#columnX"),
   z: document.querySelector("#columnZ"),
@@ -119,11 +163,13 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const dragPoint = new THREE.Vector3();
+const roofSignDragPlane = new THREE.Plane();
+const roofSignDragPoint = new THREE.Vector3();
 const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
 const WORKSPACE_STORAGE_KEY = "phoenixes-b-office-3d-preview:workspace:v1";
 const SYSTEM_BASELINE_URL = "./system-baseline.json";
 const PLAN_FORMAT = "phoenixes-office-column-plan";
-const PLAN_SCHEMA_VERSION = 6;
+const PLAN_SCHEMA_VERSION = 9;
 const WORKSPACE_FORMAT = "phoenixes-office-design-workspace";
 const WORKSPACE_SCHEMA_VERSION = 1;
 const ORIGINAL_SCHEME_ID = "original";
@@ -156,9 +202,10 @@ const fixtureGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
 const cadGroup = new THREE.Group();
 const roofGroup = new THREE.Group();
+const canopyGroup = new THREE.Group();
 const interiorLightGroup = new THREE.Group();
 const interactionGroup = new THREE.Group();
-root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, interiorLightGroup, cadGroup, interactionGroup);
+root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, canopyGroup, interiorLightGroup, cadGroup, interactionGroup);
 
 const materials = {
   siteGround: new THREE.MeshStandardMaterial({ color: 0xe5e8e4, roughness: 0.86 }),
@@ -185,6 +232,11 @@ const materials = {
   selectedColumn: new THREE.MeshStandardMaterial({ color: 0x343a3d, roughness: 0.64, emissive: 0x111719, emissiveIntensity: 0.12 }),
   columnPick: new THREE.MeshBasicMaterial({ color: 0x2f8f7c, transparent: true, opacity: 0, depthWrite: false }),
   objectPick: new THREE.MeshBasicMaterial({ color: 0x2f8f7c, transparent: true, opacity: 0, depthWrite: false }),
+  canopyFrame: new THREE.MeshStandardMaterial({ color: 0x555f62, roughness: 0.56, metalness: 0.38 }),
+  canopyFrameSelected: new THREE.MeshStandardMaterial({ color: 0xc97f2d, roughness: 0.48, metalness: 0.24, emissive: 0x3b1d08, emissiveIntensity: 0.32 }),
+  canopyPostPick: new THREE.MeshBasicMaterial({ color: 0xc97f2d, transparent: true, opacity: 0, depthWrite: false }),
+  canopyRoof: new THREE.MeshStandardMaterial({ color: 0x8c9597, roughness: 0.52, metalness: 0.46, side: THREE.DoubleSide }),
+  canopyRoofEdge: new THREE.MeshStandardMaterial({ color: 0x646e71, roughness: 0.5, metalness: 0.42 }),
   wallHandle: new THREE.MeshBasicMaterial({ color: 0x167565, transparent: true, opacity: 0.9, depthTest: false }),
   selectionLine: new THREE.LineBasicMaterial({ color: 0x167565, transparent: true, opacity: 0.95, depthTest: false }),
   wood: new THREE.MeshStandardMaterial({ color: 0xcaa58a, roughness: 0.64 }),
@@ -447,6 +499,8 @@ let planStoragePanelOpen = false;
 let furnitureVisible = true;
 let columnEditorOpen = false;
 let columnEditorCollapsed = false;
+let canopyEditorOpen = false;
+let signEditorOpen = false;
 let editableWalls = [];
 let editableLowWalls = [];
 let editableColumns = [];
@@ -454,6 +508,16 @@ let editableDoors = [];
 let editableWindows = [];
 let editableFurniture = [];
 let editableRoof = null;
+let editableCanopies = [];
+let editableSigns = [];
+let selectedCanopyId = null;
+let selectedCanopyPostIndex = null;
+let canopyDragAxis = "x";
+let canopyPostMeshes = [];
+let draggingCanopyPost = null;
+let selectedSignId = null;
+let roofSignPickMeshes = [];
+let draggingRoofSign = null;
 let selectedColumnId = null;
 let columnMeshes = [];
 let columnPickMeshes = [];
@@ -479,14 +543,18 @@ let roofVisible = true;
 let labelsVisible = false;
 const defaultBackground = new THREE.Color(0xe8ecef);
 const defaultFog = scene.fog;
+const roofSignTextureCache = new Map();
+let phoenixesLogoImage = null;
 
 init();
 
 async function init() {
-  const [modelData, baselineData] = await Promise.all([
+  const [modelData, baselineData, logoImage] = await Promise.all([
     fetch("./model-data.json").then((res) => res.json()),
     fetch(SYSTEM_BASELINE_URL).then((res) => res.json()),
+    loadImageAsset("./assets/phoenixes-logo.png"),
   ]);
+  phoenixesLogoImage = logoImage;
   data = modelData;
   calibrateModelToConstruction(data);
   officeElevation = (data.levels?.officeCm ?? 60) / 100;
@@ -523,6 +591,16 @@ async function init() {
   bindControls();
   resize();
   animate();
+}
+
+function loadImageAsset(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error(`無法載入圖片素材：${src}`)), { once: true });
+    image.src = src;
+  });
 }
 
 function calibrateModelToConstruction(model) {
@@ -900,6 +978,8 @@ function createObjectId(prefix) {
 function setWallHeightPanelOpen(open) {
   wallHeightPanelOpen = open;
   if (open && planStoragePanelOpen) setPlanStoragePanelOpen(false);
+  if (open && canopyEditorOpen) setCanopyEditorOpen(false);
+  if (open && signEditorOpen) setSignEditorOpen(false);
   if (open && columnEditorOpen) setColumnEditorCollapsed(true);
   if (wallHeightPanel) wallHeightPanel.hidden = !open;
   toggleWallHeightButton?.classList.toggle("is-active", open);
@@ -910,6 +990,8 @@ function setPlanStoragePanelOpen(open) {
   planStoragePanelOpen = open;
   if (open) {
     setWallHeightPanelOpen(false);
+    setCanopyEditorOpen(false);
+    setSignEditorOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     refreshPlanStorageStatus();
   }
@@ -947,12 +1029,55 @@ function setColumnEditorOpen(open) {
     setColumnEditorCollapsed(false);
     setWallHeightPanelOpen(false);
     setPlanStoragePanelOpen(false);
+    setCanopyEditorOpen(false);
+    setSignEditorOpen(false);
   } else {
     selectedColumnId = null;
     selectedObject = null;
   }
   syncColumnEditor();
   rebuildWalls();
+}
+
+function setCanopyEditorOpen(open) {
+  canopyEditorOpen = open;
+  if (canopyEditor) canopyEditor.hidden = !open;
+  toggleCanopyEditorButton?.classList.toggle("is-active", open);
+  toggleCanopyEditorButton?.setAttribute("aria-expanded", String(open));
+  if (open) {
+    setWallHeightPanelOpen(false);
+    setPlanStoragePanelOpen(false);
+    setSignEditorOpen(false);
+    if (columnEditorOpen) setColumnEditorOpen(false);
+    if (!selectedCanopyId || !editableCanopies.some((item) => item.id === selectedCanopyId)) {
+      selectedCanopyId = editableCanopies[0]?.id ?? null;
+    }
+  } else {
+    selectedCanopyPostIndex = null;
+    draggingCanopyPost = null;
+    getActiveControls().enabled = true;
+    canvas.style.cursor = "";
+  }
+  syncCanopyEditor();
+  rebuildCanopies();
+}
+
+function setSignEditorOpen(open) {
+  signEditorOpen = open;
+  if (signEditor) signEditor.hidden = !open;
+  toggleSignEditorButton?.classList.toggle("is-active", open);
+  toggleSignEditorButton?.setAttribute("aria-expanded", String(open));
+  if (open) {
+    setWallHeightPanelOpen(false);
+    setPlanStoragePanelOpen(false);
+    setCanopyEditorOpen(false);
+    if (columnEditorOpen) setColumnEditorOpen(false);
+    if (!selectedSignId || !editableSigns.some((item) => item.id === selectedSignId)) {
+      selectedSignId = editableSigns[0]?.id ?? null;
+    }
+  }
+  syncSignEditor();
+  rebuildRoofPreview();
 }
 
 function bindControls() {
@@ -1001,6 +1126,79 @@ function bindControls() {
     toggleFurnitureButton.setAttribute("aria-label", furnitureVisible ? "隱藏家具" : "顯示家具");
     rebuildWalls();
     updateStatus();
+  });
+  toggleCanopyEditorButton?.addEventListener("click", () => setCanopyEditorOpen(!canopyEditorOpen));
+  closeCanopyEditorButton?.addEventListener("click", () => setCanopyEditorOpen(false));
+  canopySelect?.addEventListener("change", () => {
+    selectedCanopyId = canopySelect.value;
+    selectedCanopyPostIndex = null;
+    syncCanopyEditor();
+    rebuildCanopies();
+  });
+  canopyStyleSelect?.addEventListener("change", () => {
+    performHistoryAction("切換雨棚結構", () => updateSelectedCanopyStyle(canopyStyleSelect.value));
+  });
+  decreaseCanopyPostsButton?.addEventListener("click", () => {
+    performHistoryAction("減少雨棚柱子", () => adjustCanopyPostCount(-1));
+  });
+  increaseCanopyPostsButton?.addEventListener("click", () => {
+    performHistoryAction("增加雨棚柱子", () => adjustCanopyPostCount(1));
+  });
+  canopyDragXButton?.addEventListener("click", () => setCanopyDragAxis("x"));
+  canopyDragZButton?.addEventListener("click", () => setCanopyDragAxis("z"));
+  Object.values(canopyInputs).forEach((input) => {
+    if (!input) return;
+    input.addEventListener("input", updateSelectedCanopyFromFields);
+    ["pointerdown", "focus"].forEach((eventName) => {
+      input.addEventListener(eventName, () => beginHistoryAction("調整雨棚尺寸"));
+    });
+    ["change", "blur"].forEach((eventName) => input.addEventListener(eventName, commitHistoryAction));
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      updateSelectedCanopyFromFields();
+      commitHistoryAction();
+      input.blur();
+    });
+  });
+  focusCanopyButton?.addEventListener("click", focusSelectedCanopy);
+  resetCanopiesButton?.addEventListener("click", () => {
+    performHistoryAction("重設遮雨棚範例", () => {
+      editableCanopies = createDefaultCanopies();
+      selectedCanopyId = editableCanopies[0]?.id ?? null;
+      selectedCanopyPostIndex = null;
+      syncCanopyEditor();
+      rebuildWalls();
+    });
+  });
+  toggleSignEditorButton?.addEventListener("click", () => setSignEditorOpen(!signEditorOpen));
+  closeSignEditorButton?.addEventListener("click", () => setSignEditorOpen(false));
+  signSelect?.addEventListener("change", () => {
+    selectedSignId = signSelect.value;
+    syncSignEditor();
+    rebuildRoofPreview();
+  });
+  Object.values(signInputs).forEach((input) => {
+    if (!input) return;
+    input.addEventListener("input", updateSelectedSignFromFields);
+    ["pointerdown", "focus"].forEach((eventName) => {
+      input.addEventListener(eventName, () => beginHistoryAction("調整屋頂招牌"));
+    });
+    ["change", "blur"].forEach((eventName) => input.addEventListener(eventName, commitHistoryAction));
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      updateSelectedSignFromFields();
+      commitHistoryAction();
+      input.blur();
+    });
+  });
+  focusSignButton?.addEventListener("click", focusSelectedSign);
+  resetSignsButton?.addEventListener("click", () => {
+    performHistoryAction("重設屋頂招牌", () => {
+      editableSigns = createDefaultRoofSigns();
+      selectedSignId = editableSigns[0]?.id ?? null;
+      syncSignEditor();
+      rebuildRoofPreview();
+    });
   });
   toggleColumnEditorButton?.addEventListener("click", () => setColumnEditorOpen(!columnEditorOpen));
   collapseColumnEditorButton?.addEventListener("click", () => setColumnEditorCollapsed(!columnEditorCollapsed));
@@ -1358,16 +1556,19 @@ function rebuildWalls() {
     });
   }
   rebuildRoofPreview();
+  rebuildCanopies();
   addSelectedObjectOutline();
   addSelectedWallEndpointHandles();
   addSelectedRoofResizeHandles();
   rebuildCadPlan();
   updateStatus();
   if (columnEditorOpen) syncColumnEditor();
+  if (signEditorOpen) syncSignEditor();
 }
 
 function rebuildRoofPreview() {
   clearGroup(roofGroup);
+  roofSignPickMeshes = [];
   if (!editableRoof) return;
   const position = toWorld(editableRoof.x, editableRoof.z);
   const height = editableRoof.h / 100;
@@ -1380,6 +1581,7 @@ function rebuildRoofPreview() {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   roofGroup.add(mesh);
+  rebuildRoofSigns();
   roofGroup.visible = roofVisible && !cadMode;
   syncInteriorLightingVisibility();
   if (roofVisible && !cadMode) {
@@ -1411,6 +1613,593 @@ function createDefaultRoof() {
     rot: 0,
     source: "純白平屋頂",
   };
+}
+
+function createDefaultRoofSigns() {
+  return [
+    {
+      id: "sign-south",
+      type: "roof-sign",
+      face: "south",
+      source: "南側｜Phoenixes＋封王實業",
+      u: -330,
+      v: 125,
+      w: 700,
+      depth: 12,
+      glow: 2.5,
+      includeChinese: true,
+    },
+    {
+      id: "sign-east",
+      type: "roof-sign",
+      face: "east",
+      source: "東側｜Phoenixes",
+      u: -175,
+      v: 130,
+      w: 600,
+      depth: 10,
+      glow: 2.25,
+      includeChinese: false,
+    },
+  ];
+}
+
+function getSelectedRoofSign() {
+  return editableSigns.find((item) => item.id === selectedSignId) ?? editableSigns[0] ?? null;
+}
+
+function getRoofSignAspect(sign) {
+  return sign.includeChinese ? 1600 / 520 : 1600 / 460;
+}
+
+function getRoofSignHeightCm(sign) {
+  return sign.w / getRoofSignAspect(sign);
+}
+
+function clampRoofSignToFace(sign) {
+  const faceLength = sign.face === "east" ? editableRoof?.d : editableRoof?.w;
+  const roofHeight = editableRoof?.h ?? 250;
+  const maximumWidth = Math.max(200, Math.min(1600, (faceLength ?? 600) - 16, (roofHeight - 16) * getRoofSignAspect(sign)));
+  sign.w = clampCanopyValue(sign.w, 200, maximumWidth, Math.min(600, maximumWidth));
+  const horizontalLimit = Math.max(0, ((faceLength ?? 600) - sign.w) / 2 - 8);
+  const halfHeight = getRoofSignHeightCm(sign) / 2;
+  sign.u = clampCanopyValue(sign.u, -horizontalLimit, horizontalLimit, 0);
+  sign.v = clampCanopyValue(sign.v, halfHeight + 8, Math.max(halfHeight + 8, roofHeight - halfHeight - 8), roofHeight / 2);
+  return sign;
+}
+
+function syncSignEditor() {
+  if (!signSelect) return;
+  const current = getSelectedRoofSign();
+  signSelect.replaceChildren(...editableSigns.map((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.source;
+    return option;
+  }));
+  if (!current) return;
+  selectedSignId = current.id;
+  signSelect.value = current.id;
+  Object.entries(signInputs).forEach(([key, input]) => {
+    if (input) input.value = String(current[key]);
+  });
+  if (signInputs.w) {
+    const faceLength = current.face === "east" ? editableRoof?.d : editableRoof?.w;
+    const roofHeight = editableRoof?.h ?? 250;
+    signInputs.w.max = String(Math.floor(Math.min(1600, (faceLength ?? 600) - 16, (roofHeight - 16) * getRoofSignAspect(current))));
+  }
+  if (signFaceHint) signFaceHint.textContent = current.source;
+  if (signEditorNote) {
+    const content = current.includeChinese ? "Phoenixes＋封王實業" : "Phoenixes";
+    signEditorNote.textContent = `${content}｜可直接拖曳招牌，只沿${current.face === "south" ? "南側" : "東側"}屋頂垂直面移動；顯示狀態跟隨屋頂${roofVisible ? "。" : "（目前屋頂已隱藏）。"}`;
+  }
+}
+
+function updateSelectedSignFromFields() {
+  const sign = getSelectedRoofSign();
+  if (!sign) return;
+  sign.u = clampCanopyValue(signInputs.u?.value, -3000, 3000, sign.u);
+  sign.v = clampCanopyValue(signInputs.v?.value, 20, 500, sign.v);
+  sign.w = clampCanopyValue(signInputs.w?.value, 200, 1600, sign.w);
+  sign.depth = clampCanopyValue(signInputs.depth?.value, 3, 30, sign.depth);
+  const glow = Number(signInputs.glow?.value);
+  sign.glow = Math.round(Math.min(5, Math.max(0, Number.isFinite(glow) ? glow : sign.glow)) * 4) / 4;
+  clampRoofSignToFace(sign);
+  syncSignEditor();
+  rebuildRoofPreview();
+}
+
+function rebuildRoofSigns() {
+  if (!editableRoof || !editableSigns.length) return;
+  editableSigns.forEach((sign) => {
+    clampRoofSignToFace(sign);
+    roofGroup.add(createRoofSignGroup(sign));
+  });
+}
+
+function createRoofSignGroup(sign) {
+  const placement = getRoofSignPlacement(sign);
+  const group = new THREE.Group();
+  group.position.copy(placement.position);
+  group.rotation.y = placement.rotationY;
+  const width = sign.w / 100;
+  const height = getRoofSignHeightCm(sign) / 100;
+  const depth = sign.depth / 100;
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const logoTexture = createRoofSignTexture(sign, false);
+  const glowTexture = createRoofSignTexture(sign, true);
+
+  const halo = new THREE.Mesh(
+    new THREE.PlaneGeometry(width * 1.12, height * 1.18),
+    new THREE.MeshBasicMaterial({
+      map: glowTexture,
+      transparent: true,
+      opacity: Math.min(0.9, 0.22 + sign.glow * 0.13),
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  halo.position.z = 0.012;
+  halo.renderOrder = 4;
+  group.add(halo);
+
+  const layerCount = 7;
+  for (let index = 1; index < layerCount; index += 1) {
+    const layer = new THREE.Mesh(
+      geometry.clone(),
+      new THREE.MeshBasicMaterial({ map: logoTexture, color: 0x465052, transparent: true, side: THREE.DoubleSide }),
+    );
+    layer.position.z = 0.018 + (depth * index) / layerCount;
+    layer.renderOrder = 5 + index;
+    group.add(layer);
+  }
+
+  const front = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({ map: logoTexture, transparent: true, side: THREE.DoubleSide, alphaTest: 0.03 }),
+  );
+  front.position.z = depth + 0.018;
+  front.renderOrder = 14;
+  front.userData.roofSignId = sign.id;
+  roofSignPickMeshes.push(front);
+  group.add(front);
+
+  if (signEditorOpen && sign.id === selectedSignId) {
+    const outlineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-width / 2, -height / 2, depth + 0.028),
+      new THREE.Vector3(width / 2, -height / 2, depth + 0.028),
+      new THREE.Vector3(width / 2, height / 2, depth + 0.028),
+      new THREE.Vector3(-width / 2, height / 2, depth + 0.028),
+      new THREE.Vector3(-width / 2, -height / 2, depth + 0.028),
+    ]);
+    const outline = new THREE.Line(outlineGeometry, new THREE.LineBasicMaterial({ color: 0xd18a2c, depthTest: false }));
+    outline.renderOrder = 20;
+    group.add(outline);
+  }
+
+  const light = new THREE.PointLight(0xc9ffdf, sign.glow * 1.1, 3.2, 2);
+  light.position.set(0, 0, Math.max(0.12, depth * 0.7));
+  group.add(light);
+  return group;
+}
+
+function getRoofSignPlacement(sign) {
+  const roofPosition = toWorld(editableRoof.x, editableRoof.z);
+  const baseY = getRoofBaseY();
+  if (sign.face === "east") {
+    return {
+      position: new THREE.Vector3(roofPosition.x + editableRoof.w / 200 + 0.012, baseY + sign.v / 100, roofPosition.z + sign.u / 100),
+      rotationY: Math.PI / 2,
+    };
+  }
+  return {
+    position: new THREE.Vector3(roofPosition.x + sign.u / 100, baseY + sign.v / 100, roofPosition.z + editableRoof.d / 200 + 0.012),
+    rotationY: 0,
+  };
+}
+
+function createRoofSignTexture(sign, glowOnly) {
+  const cacheKey = `${sign.includeChinese ? "combined" : "english"}-${glowOnly ? "glow" : "front"}`;
+  if (roofSignTextureCache.has(cacheKey)) return roofSignTextureCache.get(cacheKey);
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = 1600;
+  canvasEl.height = sign.includeChinese ? 520 : 460;
+  const ctx = canvasEl.getContext("2d");
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  if (glowOnly) {
+    const paintBacklight = (centerX, centerY, radiusX, radiusY, intensity = 1) => {
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(radiusX, radiusY);
+      const glow = ctx.createRadialGradient(0, 0, 0.08, 0, 0, 1);
+      glow.addColorStop(0, `rgba(238,255,244,${0.82 * intensity})`);
+      glow.addColorStop(0.52, `rgba(224,255,236,${0.58 * intensity})`);
+      glow.addColorStop(0.8, `rgba(210,255,228,${0.2 * intensity})`);
+      glow.addColorStop(1, "rgba(210,255,228,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    paintBacklight(800, sign.includeChinese ? 205 : 230, 790, sign.includeChinese ? 205 : 225, 0.88);
+    if (sign.includeChinese) paintBacklight(800, 452, 350, 76, 0.72);
+  } else {
+    const sourceCrop = { x: 117, y: 130, w: 1813, h: 418 };
+    const logoWidth = sign.includeChinese ? 1460 : 1480;
+    const logoHeight = logoWidth * sourceCrop.h / sourceCrop.w;
+    const logoX = (canvasEl.width - logoWidth) / 2;
+    const logoY = sign.includeChinese ? 34 : (canvasEl.height - logoHeight) / 2;
+    if (!phoenixesLogoImage) throw new Error("Phoenixes 招牌圖片尚未載入");
+    ctx.drawImage(
+      phoenixesLogoImage,
+      sourceCrop.x,
+      sourceCrop.y,
+      sourceCrop.w,
+      sourceCrop.h,
+      logoX,
+      logoY,
+      logoWidth,
+      logoHeight,
+    );
+    if (sign.includeChinese) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = '900 96px "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+      ctx.fillStyle = "#080a0b";
+      ctx.fillText("封王實業", canvasEl.width / 2, 455);
+      ctx.restore();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvasEl);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  roofSignTextureCache.set(cacheKey, texture);
+  return texture;
+}
+
+function focusSelectedSign() {
+  const sign = getSelectedRoofSign();
+  if (!sign || cadMode || !roofVisible) return;
+  const placement = getRoofSignPlacement(sign);
+  const target = placement.position.clone();
+  controls.target.copy(target);
+  if (sign.face === "east") camera.position.set(target.x + 11, target.y + 2.2, target.z + 1.4);
+  else camera.position.set(target.x + 1.4, target.y + 2.2, target.z + 11);
+  controls.update();
+}
+
+function createDefaultCanopies() {
+  const cantilever = {
+    id: "canopy-cantilever",
+    type: "canopy",
+    kind: "canopy",
+    style: "cantilever",
+    source: "A｜後柱懸臂單斜棚",
+    x: 1050,
+    z: 1860,
+    w: 2120,
+    d: 380,
+    h: 330,
+    rot: 0,
+    roofRise: 50,
+    postSpread: 1620,
+    postInset: 70,
+    postCount: 3,
+    postSize: 30,
+  };
+  const fourPost = {
+    id: "canopy-four-post",
+    type: "canopy",
+    kind: "canopy",
+    style: "four-post",
+    source: "B｜平頂蓋棚",
+    x: 3070,
+    z: 640,
+    w: 800,
+    d: 480,
+    h: 310,
+    rot: 90,
+    roofRise: 18,
+    postSpread: 770,
+    postInset: 25,
+    postCount: 4,
+    postSize: 30,
+  };
+  cantilever.posts = createCanopyPostLayout(cantilever);
+  fourPost.posts = createCanopyPostLayout(fourPost);
+  return [cantilever, fourPost];
+}
+
+function createCanopyPostLayout(canopy) {
+  const width = Math.max(180, Number(canopy.w) || 180);
+  const depth = Math.max(180, Number(canopy.d) || 180);
+  const postSize = Math.max(12, Number(canopy.postSize) || 20);
+  const spread = Math.min(Math.max(120, Number(canopy.postSpread) || width - 30), width - postSize);
+  const inset = Math.min(Math.max(5, Number(canopy.postInset) || 5), Math.max(5, depth / 2 - postSize));
+  const count = clampCanopyValue(canopy.postCount, 2, 10, 4);
+  if (canopy.style === "four-post") {
+    const z = Math.max(postSize / 2, depth / 2 - inset);
+    const firstRowCount = Math.ceil(count / 2);
+    const secondRowCount = Math.floor(count / 2);
+    const makeRow = (rowCount, rowZ) => Array.from({ length: rowCount }, (_, index) => ({
+      x: rowCount === 1 ? 0 : -spread / 2 + (spread * index) / (rowCount - 1),
+      z: rowZ,
+    }));
+    return [...makeRow(firstRowCount, -z), ...makeRow(secondRowCount, z)].map(roundCanopyPost);
+  }
+  const rearZ = -depth / 2 + inset;
+  return Array.from({ length: count }, (_, index) => ({
+    x: count === 1 ? 0 : -spread / 2 + (spread * index) / (count - 1),
+    z: rearZ,
+  })).map(roundCanopyPost);
+}
+
+function roundCanopyPost(post) {
+  return { x: Math.round(Number(post.x) || 0), z: Math.round(Number(post.z) || 0) };
+}
+
+function clampCanopyPost(canopy, post) {
+  const halfPost = canopy.postSize / 2;
+  const limitX = Math.max(halfPost, canopy.w / 2 - halfPost);
+  const limitZ = Math.max(halfPost, canopy.d / 2 - halfPost);
+  return {
+    x: clampCanopyValue(post?.x, -limitX, limitX, 0),
+    z: clampCanopyValue(post?.z, -limitZ, limitZ, 0),
+  };
+}
+
+function ensureCanopyPosts(canopy, { reset = false } = {}) {
+  const expectedCount = clampCanopyValue(canopy.postCount, 2, 10, 4);
+  canopy.postCount = expectedCount;
+  if (reset || !Array.isArray(canopy.posts) || canopy.posts.length !== expectedCount) {
+    canopy.posts = createCanopyPostLayout(canopy);
+  } else {
+    canopy.posts = canopy.posts.map((post) => clampCanopyPost(canopy, post));
+  }
+  return canopy.posts;
+}
+
+function getSelectedCanopy() {
+  return editableCanopies.find((item) => item.id === selectedCanopyId) ?? editableCanopies[0] ?? null;
+}
+
+function syncCanopyEditor() {
+  if (!canopySelect || !canopyStyleSelect) return;
+  const current = getSelectedCanopy();
+  canopySelect.replaceChildren(...editableCanopies.map((item, index) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.source || `雨棚 ${index + 1}`;
+    return option;
+  }));
+  if (!current) return;
+  selectedCanopyId = current.id;
+  canopySelect.value = current.id;
+  canopyStyleSelect.value = current.style;
+  Object.entries(canopyInputs).forEach(([key, input]) => {
+    if (input) input.value = String(Math.round(current[key]));
+  });
+  const cantilever = current.style === "cantilever";
+  if (canopyRoofRiseLabel) canopyRoofRiseLabel.textContent = cantilever ? "斜面落差 cm" : "頂蓋厚度 cm";
+  if (canopyInputs.roofRise) {
+    canopyInputs.roofRise.min = cantilever ? "20" : "8";
+    canopyInputs.roofRise.max = cantilever ? "180" : "40";
+    canopyInputs.roofRise.step = cantilever ? "5" : "2";
+  }
+  if (canopyPostInsetLabel) canopyPostInsetLabel.textContent = cantilever ? "後柱離牆 cm" : "柱子內縮 cm";
+  if (canopyPostCountLabel) canopyPostCountLabel.textContent = cantilever ? "後柱數量" : "支撐柱數量";
+  if (canopyPostCountOutput) canopyPostCountOutput.value = String(current.postCount);
+  if (decreaseCanopyPostsButton) decreaseCanopyPostsButton.disabled = current.postCount <= 2;
+  if (increaseCanopyPostsButton) increaseCanopyPostsButton.disabled = current.postCount >= 10;
+  canopyDragXButton?.classList.toggle("is-active", canopyDragAxis === "x");
+  canopyDragZButton?.classList.toggle("is-active", canopyDragAxis === "z");
+  canopyDragXButton?.setAttribute("aria-pressed", String(canopyDragAxis === "x"));
+  canopyDragZButton?.setAttribute("aria-pressed", String(canopyDragAxis === "z"));
+  if (canopyPostSelectionOutput) {
+    const selectedPost = Number.isInteger(selectedCanopyPostIndex) ? current.posts?.[selectedCanopyPostIndex] : null;
+    canopyPostSelectionOutput.value = selectedPost
+      ? `第 ${selectedCanopyPostIndex + 1} 根｜X ${selectedPost.x}／Z ${selectedPost.z}｜只拖 ${canopyDragAxis.toUpperCase()}`
+      : `請直接點住一根柱子拖拉｜只拖 ${canopyDragAxis.toUpperCase()}`;
+  }
+  if (canopyStructureHint) canopyStructureHint.textContent = cantilever
+    ? "前方無柱｜後柱＋上下斜撐"
+    : "自由柱數｜水平四方鐵皮頂蓋";
+  if (canopyEditorNote) canopyEditorNote.textContent = cantilever
+    ? "可增減後柱數量；每根柱子可依目前 X 或 Z 單軸模式個別拖拉。"
+    : "可增減支撐柱數量並個別拖拉；棚寬沿長向，棚深為出挑方向。";
+}
+
+function setCanopyDragAxis(axis) {
+  canopyDragAxis = axis === "z" ? "z" : "x";
+  syncCanopyEditor();
+}
+
+function adjustCanopyPostCount(delta) {
+  const canopy = getSelectedCanopy();
+  if (!canopy) return;
+  canopy.postCount = clampCanopyValue(canopy.postCount + delta, 2, 10, canopy.postCount);
+  selectedCanopyPostIndex = null;
+  ensureCanopyPosts(canopy, { reset: true });
+  syncCanopyEditor();
+  rebuildCanopies();
+  rebuildCadPlan();
+}
+
+function updateSelectedCanopyStyle(style) {
+  const canopy = getSelectedCanopy();
+  if (!canopy) return;
+  canopy.style = style === "four-post" ? "four-post" : "cantilever";
+  canopy.source = canopy.style === "cantilever" ? "後柱懸臂單斜棚" : "平頂蓋棚";
+  canopy.postCount = Math.max(2, canopy.postCount || 4);
+  canopy.roofRise = canopy.style === "four-post" ? 18 : 65;
+  selectedCanopyPostIndex = null;
+  ensureCanopyPosts(canopy, { reset: true });
+  syncCanopyEditor();
+  rebuildWalls();
+}
+
+function clampCanopyValue(value, minimum, maximum, fallback) {
+  const numeric = Number(value);
+  return Math.round(Math.min(Math.max(Number.isFinite(numeric) ? numeric : fallback, minimum), maximum));
+}
+
+function updateSelectedCanopyFromFields() {
+  const canopy = getSelectedCanopy();
+  if (!canopy) return;
+  const previousSpread = canopy.postSpread;
+  const previousInset = canopy.postInset;
+  canopy.x = clampCanopyValue(canopyInputs.x?.value, -1000, 5000, canopy.x);
+  canopy.z = clampCanopyValue(canopyInputs.z?.value, -1000, 3500, canopy.z);
+  canopy.w = clampCanopyValue(canopyInputs.w?.value, 180, 2600, canopy.w);
+  canopy.d = clampCanopyValue(canopyInputs.d?.value, 180, 2600, canopy.d);
+  canopy.h = clampCanopyValue(canopyInputs.h?.value, 220, 600, canopy.h);
+  canopy.roofRise = canopy.style === "four-post"
+    ? clampCanopyValue(canopyInputs.roofRise?.value, 8, 40, canopy.roofRise)
+    : clampCanopyValue(canopyInputs.roofRise?.value, 20, Math.min(180, canopy.h - 80), canopy.roofRise);
+  canopy.postSpread = clampCanopyValue(canopyInputs.postSpread?.value, 120, Math.max(120, canopy.w - 30), canopy.postSpread);
+  canopy.postInset = clampCanopyValue(canopyInputs.postInset?.value, 5, Math.max(5, Math.min(180, canopy.d / 2 - 20)), canopy.postInset);
+  canopy.postSize = clampCanopyValue(canopyInputs.postSize?.value, 12, 40, canopy.postSize || 20);
+  ensureCanopyPosts(canopy, { reset: canopy.postSpread !== previousSpread || canopy.postInset !== previousInset });
+  rebuildCanopies();
+  rebuildCadPlan();
+}
+
+function rebuildCanopies() {
+  clearGroup(canopyGroup);
+  canopyPostMeshes = [];
+  editableCanopies.forEach((canopy) => {
+    ensureCanopyPosts(canopy);
+    const position = toWorld(canopy.x, canopy.z);
+    const group = new THREE.Group();
+    group.position.set(position.x, getCanopyGroundY(canopy), position.z);
+    group.rotation.y = -((canopy.rot ?? 0) * Math.PI) / 180;
+    if (canopy.style === "four-post") buildFourPostCanopy(group, canopy);
+    else buildCantileverCanopy(group, canopy);
+    if (canopyEditorOpen) {
+      const label = makeTextSprite(canopy.source);
+      label.position.set(0, (canopy.h + canopy.roofRise) / 100 + 0.65, 0);
+      label.scale.set(2.8, 0.62, 1);
+      group.add(label);
+    }
+    canopyGroup.add(group);
+  });
+  const selected = getSelectedCanopy();
+  if (Number.isInteger(selectedCanopyPostIndex) && (!selected || selectedCanopyPostIndex >= selected.posts.length)) {
+    selectedCanopyPostIndex = null;
+  }
+  canopyGroup.visible = !cadMode;
+}
+
+function getCanopyGroundY(canopy) {
+  if (canopy.x > CONSTRUCTION_PLAN.building.x1) return CONSTRUCTION_PLAN.levels.eastParking / 100;
+  if (canopy.z > CONSTRUCTION_PLAN.building.z1) return CONSTRUCTION_PLAN.levels.southRoad / 100;
+  return 0;
+}
+
+function buildCantileverCanopy(group, canopy) {
+  const width = canopy.w / 100;
+  const depth = canopy.d / 100;
+  const highY = canopy.h / 100;
+  const drop = canopy.roofRise / 100;
+  const lowY = highY - drop;
+  const roofThickness = 0.12;
+  const roofLength = Math.hypot(depth, drop);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(width, roofThickness, roofLength), materials.canopyRoof);
+  roof.position.set(0, (highY + lowY) / 2 + 0.045, 0);
+  roof.rotation.x = Math.atan2(drop, depth);
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  group.add(roof);
+
+  const frontZ = depth / 2 - 0.05;
+  const posts = ensureCanopyPosts(canopy);
+  const averageRearZ = posts.reduce((sum, post) => sum + post.z / 100, 0) / posts.length;
+  addBoxToGroup(group, width, 0.12, 0.11, materials.canopyRoofEdge, 0, highY - 0.04, averageRearZ);
+  addBoxToGroup(group, width, 0.1, 0.09, materials.canopyRoofEdge, 0, lowY - 0.04, frontZ);
+  posts.forEach((post, index) => {
+    const x = post.x / 100;
+    const z = post.z / 100;
+    const slopeRatio = Math.min(1, Math.max(0, (z + depth / 2) / depth));
+    const postTopY = highY - drop * slopeRatio;
+    addCanopyPost(group, canopy, index, x, z, postTopY);
+    addBeamBetween(
+      group,
+      new THREE.Vector3(x, postTopY - 0.03, z),
+      new THREE.Vector3(x, lowY - 0.03, frontZ),
+      0.1,
+      materials.canopyFrame,
+    );
+    const braceStartY = Math.max(1.15, postTopY - 1.45);
+    addBeamBetween(
+      group,
+      new THREE.Vector3(x, braceStartY, z + 0.02),
+      new THREE.Vector3(x, lowY - 0.12, frontZ - 0.12),
+      0.09,
+      materials.canopyFrame,
+    );
+  });
+}
+
+function buildFourPostCanopy(group, canopy) {
+  const width = canopy.w / 100;
+  const depth = canopy.d / 100;
+  const topY = canopy.h / 100;
+  const capThickness = canopy.roofRise / 100;
+  ensureCanopyPosts(canopy).forEach((post, index) => {
+    addCanopyPost(group, canopy, index, post.x / 100, post.z / 100, topY);
+  });
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(width, capThickness, depth), materials.canopyRoof);
+  roof.position.y = topY + capThickness / 2;
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  group.add(roof);
+  addBoxToGroup(group, width + 0.06, 0.08, 0.07, materials.canopyRoofEdge, 0, topY + capThickness / 2, -depth / 2);
+  addBoxToGroup(group, width + 0.06, 0.08, 0.07, materials.canopyRoofEdge, 0, topY + capThickness / 2, depth / 2);
+  addBoxToGroup(group, 0.07, 0.08, depth, materials.canopyRoofEdge, -width / 2, topY + capThickness / 2, 0);
+  addBoxToGroup(group, 0.07, 0.08, depth, materials.canopyRoofEdge, width / 2, topY + capThickness / 2, 0);
+}
+
+function addCanopyPost(group, canopy, index, x, z, height) {
+  const selected = canopyEditorOpen && canopy.id === selectedCanopyId && index === selectedCanopyPostIndex;
+  const postSize = canopy.postSize / 100;
+  addBoxToGroup(group, postSize, height, postSize, selected ? materials.canopyFrameSelected : materials.canopyFrame, x, height / 2, z);
+  const pickSize = Math.max(postSize, 0.34);
+  const pick = addBoxToGroup(group, pickSize, height, pickSize, materials.canopyPostPick, x, height / 2, z);
+  pick.castShadow = false;
+  pick.receiveShadow = false;
+  pick.userData.canopyId = canopy.id;
+  pick.userData.postIndex = index;
+  canopyPostMeshes.push(pick);
+}
+
+function addBeamBetween(group, start, end, thickness, material) {
+  const direction = new THREE.Vector3().subVectors(end, start);
+  const length = direction.length();
+  if (length <= 0.001) return null;
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(thickness, length, thickness), material);
+  beam.position.copy(start).add(end).multiplyScalar(0.5);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  beam.castShadow = true;
+  beam.receiveShadow = true;
+  group.add(beam);
+  return beam;
+}
+
+function focusSelectedCanopy() {
+  const canopy = getSelectedCanopy();
+  if (!canopy || cadMode) return;
+  const position = toWorld(canopy.x, canopy.z);
+  const groundY = getCanopyGroundY(canopy);
+  const targetY = groundY + canopy.h / 200;
+  const distance = Math.max(canopy.w, canopy.d) / 100;
+  controls.target.set(position.x, targetY, position.z);
+  camera.position.set(position.x + distance * 0.7 + 2.4, targetY + distance * 0.45 + 2.1, position.z + distance * 0.85 + 2.8);
+  controls.update();
 }
 
 function getRoofBaseY() {
@@ -2185,6 +2974,7 @@ function rebuildCadPlan() {
   for (const item of editableColumns) addCadOrientedRect(item.x, item.z, item.w, item.d, item.rot, item.id === selectedObject?.id ? cadMaterials.medium : cadMaterials.heavy, y);
   for (const item of editableDoors) addCadDoor(item, y);
   for (const item of editableWindows) addCadOrientedRect(item.x, item.z, item.w, Math.max(item.d, 8), item.rot, cadMaterials.light, y);
+  for (const item of editableCanopies) addCadOrientedRect(item.x, item.z, item.w, item.d, item.rot, cadMaterials.medium, y);
   if (furnitureVisible) {
     for (const item of editableFurniture) addCadFurniture(item, y);
     for (const item of data.fixtures ?? []) addCadFixture(item, y);
@@ -2865,6 +3655,7 @@ function applyCadMode() {
     fixtureGroup.visible = false;
     labelGroup.visible = false;
     roofGroup.visible = false;
+    canopyGroup.visible = false;
     cadGroup.visible = true;
     scene.background = new THREE.Color(0xffffff);
     scene.fog = null;
@@ -2880,6 +3671,7 @@ function applyCadMode() {
     fixtureGroup.visible = furnitureVisible;
     labelGroup.visible = labelsVisible;
     roofGroup.visible = roofVisible;
+    canopyGroup.visible = true;
     cadGroup.visible = false;
     scene.background = defaultBackground.clone();
     scene.fog = defaultFog;
@@ -3536,6 +4328,8 @@ function getCurrentPlanState() {
     windows: editableWindows.map(serializeEditableItem),
     furniture: editableFurniture.map(serializeEditableItem),
     roof: serializeEditableItem(editableRoof),
+    canopies: editableCanopies.map(serializeCanopy),
+    signs: editableSigns.map(serializeRoofSign),
   };
 }
 
@@ -3568,6 +4362,115 @@ function serializeEditableItem(item) {
   return result;
 }
 
+function serializeCanopy(item) {
+  return {
+    id: String(item.id),
+    type: "canopy",
+    kind: "canopy",
+    style: item.style === "four-post" ? "four-post" : "cantilever",
+    source: String(item.source ?? item.id).slice(0, 120),
+    x: Math.round(item.x),
+    z: Math.round(item.z),
+    w: Math.round(item.w),
+    d: Math.round(item.d),
+    h: Math.round(item.h),
+    rot: Math.round(item.rot ?? 0),
+    roofRise: Math.round(item.roofRise),
+    postSpread: Math.round(item.postSpread),
+    postInset: Math.round(item.postInset),
+    postCount: Math.round(item.postCount),
+    postSize: Math.round(item.postSize),
+    posts: ensureCanopyPosts(item).map(roundCanopyPost),
+  };
+}
+
+function serializeRoofSign(item) {
+  return {
+    id: String(item.id),
+    type: "roof-sign",
+    face: item.face === "east" ? "east" : "south",
+    source: String(item.source ?? item.id).slice(0, 120),
+    u: Math.round(item.u),
+    v: Math.round(item.v),
+    w: Math.round(item.w),
+    depth: Math.round(item.depth),
+    glow: Math.round(Number(item.glow) * 4) / 4,
+    includeChinese: Boolean(item.includeChinese),
+  };
+}
+
+function normalizeRoofSigns(items = createDefaultRoofSigns()) {
+  if (!Array.isArray(items) || items.length !== 2) return createDefaultRoofSigns().map(serializeRoofSign);
+  const defaults = createDefaultRoofSigns();
+  return defaults.map((fallback) => {
+    const item = items.find((candidate) => candidate?.id === fallback.id || candidate?.face === fallback.face) ?? fallback;
+    const glow = Number(item.glow);
+    const normalized = {
+      id: fallback.id,
+      type: "roof-sign",
+      face: fallback.face,
+      source: fallback.source,
+      u: clampCanopyValue(item.u, -3000, 3000, fallback.u),
+      v: clampCanopyValue(item.v, 20, 500, fallback.v),
+      w: clampCanopyValue(item.w, 200, 1600, fallback.w),
+      depth: clampCanopyValue(item.depth, 3, 30, fallback.depth),
+      glow: Math.round(Math.min(5, Math.max(0, Number.isFinite(glow) ? glow : fallback.glow)) * 4) / 4,
+      includeChinese: fallback.includeChinese,
+    };
+    return normalized;
+  });
+}
+
+function normalizeCanopies(items = createDefaultCanopies()) {
+  if (!Array.isArray(items) || items.length < 1 || items.length > 8) throw new Error("雨棚資料數量不正確");
+  const usedIds = new Set();
+  return items.map((item, index) => {
+    const fallback = createDefaultCanopies()[Math.min(index, 1)] ?? createDefaultCanopies()[0];
+    const rawWidth = clampCanopyValue(item?.w, 180, 2600, fallback.w);
+    const rawDepth = clampCanopyValue(item?.d, 180, 2600, fallback.d);
+    const preferredId = typeof item?.id === "string" && item.id.trim() ? item.id.trim().slice(0, 120) : `canopy-${index + 1}`;
+    let id = preferredId;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `${preferredId}-${suffix++}`;
+    usedIds.add(id);
+    const style = item?.style === "four-post" ? "four-post" : "cantilever";
+    const importedRotation = normalizeAngle(clampCanopyValue(item?.rot, -360, 360, fallback.rot));
+    const swapEastFlatAxes = id === "canopy-four-post" && style === "four-post" && rawDepth > rawWidth && Math.abs(importedRotation) < 1;
+    const width = swapEastFlatAxes ? rawDepth : rawWidth;
+    const depth = swapEastFlatAxes ? rawWidth : rawDepth;
+    const rotation = swapEastFlatAxes ? 90 : importedRotation;
+    const postCount = clampCanopyValue(item?.postCount, 2, 10, fallback.postCount);
+    const postSize = clampCanopyValue(item?.postSize, 12, 40, fallback.postSize);
+    const normalized = {
+      id,
+      type: "canopy",
+      kind: "canopy",
+      style,
+      source: swapEastFlatAxes ? "B｜平頂蓋棚" : (typeof item?.source === "string" ? item.source.slice(0, 120) : fallback.source),
+      x: clampCanopyValue(item?.x, -1000, 5000, fallback.x),
+      z: clampCanopyValue(item?.z, -1000, 3500, fallback.z),
+      w: width,
+      d: depth,
+      h: clampCanopyValue(item?.h, 220, 600, fallback.h),
+      rot: rotation,
+      roofRise: style === "four-post"
+        ? clampCanopyValue(item?.postSize == null ? fallback.roofRise : item?.roofRise, 8, 40, fallback.roofRise)
+        : clampCanopyValue(item?.roofRise, 20, 180, fallback.roofRise),
+      postSpread: clampCanopyValue(swapEastFlatAxes ? width - postSize : item?.postSpread, 120, Math.max(120, width - postSize), fallback.postSpread),
+      postInset: clampCanopyValue(item?.postInset, 5, Math.max(5, Math.min(180, depth / 2 - 20)), fallback.postInset),
+      postCount,
+      postSize,
+    };
+    const importedPosts = swapEastFlatAxes && Array.isArray(item?.posts)
+      ? item.posts.map((post) => ({ x: post.z, z: -post.x }))
+      : item?.posts;
+    normalized.posts = Array.isArray(importedPosts) && importedPosts.length === postCount
+      ? importedPosts.map((post) => clampCanopyPost(normalized, post))
+      : createCanopyPostLayout(normalized);
+    return normalized;
+  });
+}
+
 function getOriginalEditableState(
   wallHeightM = DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100,
   exteriorWallHeightM = DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100,
@@ -3581,6 +4484,8 @@ function getOriginalEditableState(
     windows: makeEditableWindows(WINDOW_ITEMS),
     furniture: makeEditableFurniture(DESIGN_ITEMS),
     roof: createDefaultRoof(),
+    canopies: createDefaultCanopies(),
+    signs: createDefaultRoofSigns(),
   };
   normalizeEntranceFacadeWall(original.walls);
   assignWallCategories(original.walls);
@@ -3658,7 +4563,7 @@ function normalizeEditableItems(items, type, limit = 200) {
 
 function normalizePlanState(plan) {
   const schemaVersion = Number(plan?.schemaVersion);
-  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || ![1, 2, 3, 4, 5, PLAN_SCHEMA_VERSION].includes(schemaVersion)) {
+  if (!plan || typeof plan !== "object" || plan.format !== PLAN_FORMAT || !Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > PLAN_SCHEMA_VERSION) {
     throw new Error("不是相容的封王 288 號備份檔");
   }
   if (!Array.isArray(plan.columns) || plan.columns.length > 100) {
@@ -3696,8 +4601,12 @@ function normalizePlanState(plan) {
       windows: normalizeEditableItems(plan.windows ?? fallback.windows, "window", 100),
       furniture: normalizeEditableItems(plan.furniture ?? fallback.furniture, "furniture", 200),
       roof: normalizeEditableItems([plan.roof ?? fallback.roof], "roof", 1)[0],
+      canopies: normalizeCanopies(plan.canopies ?? fallback.canopies),
+      signs: normalizeRoofSigns(plan.signs ?? fallback.signs),
     };
   }
+  collections.canopies ??= createDefaultCanopies();
+  collections.signs ??= createDefaultRoofSigns();
   if (schemaVersion < 4) {
     collections.doors.forEach((door) => {
       door.w = STANDARD_DOOR_WIDTH_CM;
@@ -3723,6 +4632,8 @@ function normalizePlanState(plan) {
     windows: collections.windows.map(serializeEditableItem),
     furniture: collections.furniture.map(serializeEditableItem),
     roof: serializeEditableItem(collections.roof),
+    canopies: normalizeCanopies(collections.canopies).map(serializeCanopy),
+    signs: normalizeRoofSigns(collections.signs).map(serializeRoofSign),
   };
 }
 
@@ -3747,6 +4658,13 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   editableWindows = normalizeEditableItems(normalized.windows, "window", 100);
   editableFurniture = normalizeEditableItems(normalized.furniture, "furniture", 200);
   editableRoof = normalizeEditableItems([normalized.roof], "roof", 1)[0];
+  editableCanopies = normalizeCanopies(normalized.canopies);
+  editableSigns = normalizeRoofSigns(normalized.signs);
+  selectedCanopyId = editableCanopies.some((item) => item.id === selectedCanopyId) ? selectedCanopyId : editableCanopies[0]?.id ?? null;
+  selectedSignId = editableSigns.some((item) => item.id === selectedSignId) ? selectedSignId : editableSigns[0]?.id ?? null;
+  selectedCanopyPostIndex = null;
+  draggingCanopyPost = null;
+  draggingRoofSign = null;
   bridgeWallSegmentsAtDoors();
   refreshOpeningWallLinks();
   selectedObject = previousSelection && getEditableObjectById(previousSelection.id, previousSelection.type) ? previousSelection : null;
@@ -3756,6 +4674,8 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   cadControls.enabled = cadMode;
   if (clearHistory) clearEditHistory();
   updateWallHeightLabel();
+  syncCanopyEditor();
+  syncSignEditor();
   rebuildFurniture();
   rebuildWalls();
   return normalized;
@@ -4046,7 +4966,7 @@ async function importPlanFromFile(event) {
 }
 
 function restoreOriginalPlan() {
-  const confirmed = window.confirm("將牆、柱、門、窗、家具、屋頂與牆高全部恢復為系統基準？已儲存版本不會被刪除。");
+  const confirmed = window.confirm("將牆、柱、門、窗、家具、屋頂、遮雨棚、招牌與牆高全部恢復為系統基準？已儲存版本不會被刪除。");
   if (!confirmed) return;
   performHistoryAction("回到系統基準", () => applyPlanState(createOriginalPlanState(), { clearHistory: false }));
   selectedSchemeId = ORIGINAL_SCHEME_ID;
@@ -4069,6 +4989,19 @@ function planStateSignature(plan) {
     doorStyle: item.doorStyle,
     wallCategory: item.wallCategory,
     furnitureType: item.furnitureType,
+    style: item.style,
+    roofRise: item.roofRise == null ? undefined : Number(item.roofRise),
+    postSpread: item.postSpread == null ? undefined : Number(item.postSpread),
+    postInset: item.postInset == null ? undefined : Number(item.postInset),
+    postCount: item.postCount == null ? undefined : Number(item.postCount),
+    postSize: item.postSize == null ? undefined : Number(item.postSize),
+    posts: Array.isArray(item.posts) ? item.posts.map((post) => ({ x: Number(post.x), z: Number(post.z) })) : undefined,
+    face: item.face,
+    u: item.u == null ? undefined : Number(item.u),
+    v: item.v == null ? undefined : Number(item.v),
+    depth: item.depth == null ? undefined : Number(item.depth),
+    glow: item.glow == null ? undefined : Number(item.glow),
+    includeChinese: item.includeChinese,
     source: item.source,
   }));
   return JSON.stringify({
@@ -4082,6 +5015,8 @@ function planStateSignature(plan) {
     windows: serializeCollection(plan.windows),
     furniture: serializeCollection(plan.furniture),
     roof: serializeCollection([plan.roof]),
+    canopies: serializeCollection(plan.canopies ?? []),
+    signs: serializeCollection(plan.signs ?? []),
   });
 }
 
@@ -4204,6 +5139,35 @@ function getObjectHitFromEvent(event) {
   return nearbyHits[0];
 }
 
+function getCanopyPostHitFromEvent(event) {
+  if (!canopyEditorOpen || cadMode || !canopyPostMeshes.length) return null;
+  setPointerFromEvent(event);
+  return raycaster.intersectObjects(canopyPostMeshes, false)[0] ?? null;
+}
+
+function getRoofSignHitFromEvent(event) {
+  if (!signEditorOpen || cadMode || !roofVisible || !roofSignPickMeshes.length) return null;
+  setPointerFromEvent(event);
+  return raycaster.intersectObjects(roofSignPickMeshes, false)[0] ?? null;
+}
+
+function getRoofSignFacePointFromEvent(event, sign) {
+  setPointerFromEvent(event);
+  const placement = getRoofSignPlacement(sign);
+  const normal = sign.face === "east" ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+  roofSignDragPlane.setFromNormalAndCoplanarPoint(normal, placement.position);
+  if (!raycaster.ray.intersectPlane(roofSignDragPlane, roofSignDragPoint)) return null;
+  return roofSignDragPoint.clone();
+}
+
+function getRoofSignCoordinatesFromWorldPoint(sign, point) {
+  const roofPosition = toWorld(editableRoof.x, editableRoof.z);
+  return {
+    u: (sign.face === "east" ? point.z - roofPosition.z : point.x - roofPosition.x) * 100,
+    v: (point.y - getRoofBaseY()) * 100,
+  };
+}
+
 function getPlanPointFromEvent(event) {
   setPointerFromEvent(event);
   dragPlane.constant = -activeDragPlaneY;
@@ -4213,6 +5177,19 @@ function getPlanPointFromEvent(event) {
 
 function startObjectInteraction(event) {
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (canopyEditorOpen) {
+    if (startCanopyPostInteraction(event)) return;
+    if (selectedCanopyPostIndex !== null) {
+      selectedCanopyPostIndex = null;
+      syncCanopyEditor();
+      rebuildCanopies();
+    }
+    return;
+  }
+  if (signEditorOpen) {
+    startRoofSignInteraction(event);
+    return;
+  }
   const hit = getObjectHitFromEvent(event);
   if (!hit?.object?.userData?.objectId) {
     if (selectedObject) {
@@ -4275,7 +5252,133 @@ function startObjectInteraction(event) {
   rebuildWalls();
 }
 
+function startRoofSignInteraction(event) {
+  const hit = getRoofSignHitFromEvent(event);
+  const signId = hit?.object?.userData?.roofSignId;
+  const sign = editableSigns.find((item) => item.id === signId);
+  if (!sign) return false;
+  const facePoint = getRoofSignFacePointFromEvent(event, sign);
+  if (!facePoint) return false;
+  const coordinates = getRoofSignCoordinatesFromWorldPoint(sign, facePoint);
+  selectedSignId = sign.id;
+  draggingRoofSign = {
+    signId: sign.id,
+    offsetU: sign.u - coordinates.u,
+    offsetV: sign.v - coordinates.v,
+  };
+  beginHistoryAction(`拖曳${sign.source}`);
+  getActiveControls().enabled = false;
+  canvas.style.cursor = "grabbing";
+  canvas.setPointerCapture?.(event.pointerId);
+  syncSignEditor();
+  rebuildRoofPreview();
+  event.preventDefault();
+  return true;
+}
+
+function dragRoofSign(event) {
+  const drag = draggingRoofSign;
+  const sign = editableSigns.find((item) => item.id === drag?.signId);
+  if (!drag || !sign) return;
+  const facePoint = getRoofSignFacePointFromEvent(event, sign);
+  if (!facePoint) return;
+  const coordinates = getRoofSignCoordinatesFromWorldPoint(sign, facePoint);
+  sign.u = Math.round(coordinates.u + drag.offsetU);
+  sign.v = Math.round(coordinates.v + drag.offsetV);
+  clampRoofSignToFace(sign);
+  syncSignEditor();
+  rebuildRoofPreview();
+  event.preventDefault();
+}
+
+function endRoofSignDrag(event) {
+  if (!draggingRoofSign) return false;
+  draggingRoofSign = null;
+  getActiveControls().enabled = true;
+  canvas.style.cursor = "";
+  if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+  commitHistoryAction();
+  syncSignEditor();
+  rebuildRoofPreview();
+  updateStatus();
+  return true;
+}
+
+function startCanopyPostInteraction(event) {
+  const hit = getCanopyPostHitFromEvent(event);
+  const canopyId = hit?.object?.userData?.canopyId;
+  const postIndex = Number(hit?.object?.userData?.postIndex);
+  const canopy = editableCanopies.find((item) => item.id === canopyId);
+  if (!canopy || !Number.isInteger(postIndex) || !canopy.posts?.[postIndex]) return false;
+  selectedCanopyId = canopy.id;
+  selectedCanopyPostIndex = postIndex;
+  activeDragPlaneY = getCanopyGroundY(canopy);
+  const planPoint = getPlanPointFromEvent(event);
+  if (!planPoint) return false;
+  const post = canopy.posts[postIndex];
+  draggingCanopyPost = {
+    canopyId: canopy.id,
+    postIndex,
+    axis: canopyDragAxis,
+    startPlanPoint: { x: planPoint.x, z: planPoint.z },
+    startPost: { x: post.x, z: post.z },
+  };
+  beginHistoryAction(`拖曳雨棚第 ${postIndex + 1} 根柱子 ${canopyDragAxis.toUpperCase()}`);
+  getActiveControls().enabled = false;
+  canvas.style.cursor = "grabbing";
+  canvas.setPointerCapture?.(event.pointerId);
+  syncCanopyEditor();
+  rebuildCanopies();
+  event.preventDefault();
+  return true;
+}
+
+function dragCanopyPost(event) {
+  const drag = draggingCanopyPost;
+  const canopy = editableCanopies.find((item) => item.id === drag?.canopyId);
+  const post = canopy?.posts?.[drag?.postIndex];
+  const planPoint = getPlanPointFromEvent(event);
+  if (!drag || !canopy || !post || !planPoint) return;
+  const deltaX = planPoint.x - drag.startPlanPoint.x;
+  const deltaZ = planPoint.z - drag.startPlanPoint.z;
+  const rotation = -((canopy.rot ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const localDeltaX = cos * deltaX - sin * deltaZ;
+  const localDeltaZ = sin * deltaX + cos * deltaZ;
+  const next = { ...drag.startPost };
+  if (drag.axis === "z") next.z += localDeltaZ;
+  else next.x += localDeltaX;
+  canopy.posts[drag.postIndex] = clampCanopyPost(canopy, next);
+  syncCanopyEditor();
+  rebuildCanopies();
+  rebuildCadPlan();
+  event.preventDefault();
+}
+
+function endCanopyPostDrag(event) {
+  if (!draggingCanopyPost) return false;
+  draggingCanopyPost = null;
+  activeDragPlaneY = officeElevation;
+  getActiveControls().enabled = true;
+  canvas.style.cursor = "";
+  if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+  commitHistoryAction();
+  syncCanopyEditor();
+  rebuildCanopies();
+  updateStatus();
+  return true;
+}
+
 function dragSelectedObject(event) {
+  if (draggingRoofSign) {
+    dragRoofSign(event);
+    return;
+  }
+  if (draggingCanopyPost) {
+    dragCanopyPost(event);
+    return;
+  }
   if (!draggingObjectId) return;
   const selected = getEditableObjectById(draggingObjectId);
   const planPoint = getPlanPointFromEvent(event);
@@ -4306,6 +5409,8 @@ function dragSelectedObject(event) {
 }
 
 function endObjectDrag(event) {
+  if (endRoofSignDrag(event)) return;
+  if (endCanopyPostDrag(event)) return;
   if (!draggingObjectId) return;
   const dragged = getEditableObjectById(draggingObjectId);
   if (dragged?.type === "wall") {
