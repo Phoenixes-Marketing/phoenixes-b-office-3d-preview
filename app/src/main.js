@@ -121,6 +121,7 @@ const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const dragPoint = new THREE.Vector3();
 const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
 const WORKSPACE_STORAGE_KEY = "phoenixes-b-office-3d-preview:workspace:v1";
+const SYSTEM_BASELINE_URL = "./system-baseline.json";
 const PLAN_FORMAT = "phoenixes-office-column-plan";
 const PLAN_SCHEMA_VERSION = 6;
 const WORKSPACE_FORMAT = "phoenixes-office-design-workspace";
@@ -432,6 +433,7 @@ const CONSTRUCTION_PLAN = {
 const HUMAN_SCALE = { x: 2275, z: 1355, rot: -25 };
 
 let data;
+let systemBaselinePlan = null;
 let bounds;
 let center;
 let planMesh;
@@ -481,7 +483,11 @@ const defaultFog = scene.fog;
 init();
 
 async function init() {
-  data = await fetch("./model-data.json").then((res) => res.json());
+  const [modelData, baselineData] = await Promise.all([
+    fetch("./model-data.json").then((res) => res.json()),
+    fetch(SYSTEM_BASELINE_URL).then((res) => res.json()),
+  ]);
+  data = modelData;
   calibrateModelToConstruction(data);
   officeElevation = (data.levels?.officeCm ?? 60) / 100;
   wallHeightInput.min = "1.5";
@@ -505,19 +511,8 @@ async function init() {
     x: (bounds.x0 + bounds.x1) / 2,
     z: (bounds.z0 + bounds.z1) / 2,
   };
-  editableRoof = createDefaultRoof();
-  editableWalls = makeEditableFootprints(data.walls, "wall", DEFAULT_INTERIOR_WALL_HEIGHT_CM);
-  normalizeEntranceFacadeWall(editableWalls);
-  assignWallCategories(editableWalls);
-  applyWallCategoryHeights();
-  normalizeAmbiguousToiletWallStubs(editableWalls);
-  editableLowWalls = makeEditableFootprints(data.lowWalls, "low-wall", data.defaults?.lowWallHeightCm ?? 130);
-  editableColumns = makeEditableColumns(data.columns);
-  editableDoors = makeEditableDoors(data.doors ?? [], data.doorSills ?? []);
-  bridgeWallSegmentsAtDoors();
-  editableWindows = makeEditableWindows(WINDOW_ITEMS);
-  editableFurniture = makeEditableFurniture(DESIGN_ITEMS);
-  refreshOpeningWallLinks();
+  systemBaselinePlan = normalizePlanState(baselineData);
+  applyPlanState(systemBaselinePlan);
   workspace = loadWorkspace();
   selectedSchemeId = ORIGINAL_SCHEME_ID;
   renderSchemeOptions();
@@ -3732,18 +3727,8 @@ function normalizePlanState(plan) {
 }
 
 function createOriginalPlanState() {
-  const defaultWallHeightM = DEFAULT_INTERIOR_WALL_HEIGHT_CM / 100;
-  const defaultExteriorWallHeightM = DEFAULT_EXTERIOR_WALL_HEIGHT_CM / 100;
-  const defaultColumnHeightM = DEFAULT_COLUMN_HEIGHT_CM / 100;
-  return normalizePlanState({
-    format: PLAN_FORMAT,
-    schemaVersion: PLAN_SCHEMA_VERSION,
-    savedAt: new Date().toISOString(),
-    wallHeightM: defaultWallHeightM,
-    exteriorWallHeightM: defaultExteriorWallHeightM,
-    columnHeightM: defaultColumnHeightM,
-    ...getOriginalEditableState(defaultWallHeightM, defaultExteriorWallHeightM, defaultColumnHeightM),
-  });
+  if (!systemBaselinePlan) throw new Error("系統基準尚未載入");
+  return normalizePlanState(systemBaselinePlan);
 }
 
 function applyPlanState(plan, { clearHistory = true, preserveSelection = false } = {}) {
@@ -3823,11 +3808,24 @@ function normalizeWorkspace(value) {
   return { format: WORKSPACE_FORMAT, schemaVersion: WORKSPACE_SCHEMA_VERSION, schemes };
 }
 
+function removeSystemBaselineDuplicates(value) {
+  if (!systemBaselinePlan) return value;
+  return {
+    ...value,
+    schemes: value.schemes.filter((scheme) => !planStatesMatch(scheme.plan, systemBaselinePlan)),
+  };
+}
+
 function loadWorkspace() {
   const rawWorkspace = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
   if (rawWorkspace) {
     try {
-      return normalizeWorkspace(JSON.parse(rawWorkspace));
+      const normalized = normalizeWorkspace(JSON.parse(rawWorkspace));
+      const deduplicated = removeSystemBaselineDuplicates(normalized);
+      if (deduplicated.schemes.length !== normalized.schemes.length) {
+        window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(deduplicated));
+      }
+      return deduplicated;
     } catch (error) {
       console.warn("Stored workspace could not be read", error);
       return createEmptyWorkspace();
@@ -3839,6 +3837,7 @@ function loadWorkspace() {
   if (!legacyDraft) return emptyWorkspace;
   try {
     const plan = normalizePlanState(JSON.parse(legacyDraft));
+    if (planStatesMatch(plan, systemBaselinePlan)) return emptyWorkspace;
     const now = new Date().toISOString();
     emptyWorkspace.schemes.push({
       id: createSchemeId("legacy"),
@@ -3869,7 +3868,7 @@ function renderSchemeOptions() {
   if (selectedSchemeId !== ORIGINAL_SCHEME_ID && !validSchemeIds.has(selectedSchemeId)) {
     selectedSchemeId = ORIGINAL_SCHEME_ID;
   }
-  schemeSelect.replaceChildren(new Option("系統基準（不可覆寫）", ORIGINAL_SCHEME_ID));
+  schemeSelect.replaceChildren(new Option("系統基準：西瓜（不可覆寫）", ORIGINAL_SCHEME_ID));
   workspace.schemes.forEach((scheme) => {
     schemeSelect.add(new Option(scheme.name, scheme.id));
   });
