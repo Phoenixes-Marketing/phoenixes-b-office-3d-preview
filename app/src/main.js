@@ -117,10 +117,14 @@ const objectEditorInputs = [...Object.values(columnInputs), objectHeightInput, o
 const deferredEditorInputs = new Set([columnInputs.w, columnInputs.d, objectHeightInput, objectRotationInput, objectVerticalInput]);
 const pendingEditorInputs = new WeakSet();
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+const pixelRatioLimit = coarsePointer ? 1.5 : 1.75;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioLimit));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;
+renderer.shadowMap.needsUpdate = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -220,10 +224,9 @@ const materials = {
   corrugatedWall: new THREE.MeshStandardMaterial({ color: 0x626b6f, roughness: 0.7, metalness: 0.2 }),
   corrugatedRib: new THREE.MeshStandardMaterial({ color: 0x50585c, roughness: 0.62, metalness: 0.28 }),
   roof: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 }),
-  lowWall: new THREE.MeshPhysicalMaterial({
+  lowWall: new THREE.MeshStandardMaterial({
     color: 0x9ed0d0,
     roughness: 0.18,
-    transmission: 0.16,
     transparent: true,
     opacity: 0.72,
     depthWrite: false,
@@ -250,10 +253,9 @@ const materials = {
   door: new THREE.MeshStandardMaterial({ color: 0xdcc7a6, roughness: 0.55 }),
   doorArc: new THREE.MeshBasicMaterial({ color: 0x1d6db5, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }),
   sill: new THREE.MeshStandardMaterial({ color: 0x6ec9dc, roughness: 0.42, transparent: true, opacity: 0.72, depthWrite: false }),
-  glass: new THREE.MeshPhysicalMaterial({
+  glass: new THREE.MeshStandardMaterial({
     color: 0x26343b,
     roughness: 0.2,
-    transmission: 0.08,
     transparent: true,
     opacity: 0.78,
     depthWrite: false,
@@ -545,6 +547,7 @@ const defaultBackground = new THREE.Color(0xe8ecef);
 const defaultFog = scene.fog;
 const roofSignTextureCache = new Map();
 let phoenixesLogoImage = null;
+let renderFrameId = null;
 
 init();
 
@@ -590,7 +593,7 @@ async function init() {
   setCameraPreset("default");
   bindControls();
   resize();
-  animate();
+  requestRender(true);
 }
 
 function loadImageAsset(src) {
@@ -1206,10 +1209,12 @@ function bindControls() {
     if (!planMesh) return;
     planMesh.visible = !planMesh.visible;
     event.currentTarget.classList.toggle("is-active", planMesh.visible);
+    requestRender();
   });
   toggleLabelsButton?.addEventListener("click", () => {
     labelsVisible = !labelsVisible;
     labelGroup.visible = labelsVisible && !cadMode;
+    requestRender();
     toggleLabelsButton.classList.toggle("is-active", labelsVisible);
     toggleLabelsButton.setAttribute("aria-pressed", String(labelsVisible));
     toggleLabelsButton.setAttribute("title", labelsVisible ? "隱藏空間標籤" : "顯示空間標籤");
@@ -1217,6 +1222,7 @@ function bindControls() {
   });
   planOpacity?.addEventListener("input", () => {
     if (planMesh) planMesh.material.opacity = Number(planOpacity.value);
+    requestRender();
   });
   wallHeightInput.addEventListener("input", () => {
     currentWallHeight = Number(wallHeightInput.value);
@@ -1307,6 +1313,8 @@ function bindControls() {
   window.addEventListener("pointerup", endObjectDrag);
   window.addEventListener("pointercancel", endObjectDrag);
   window.addEventListener("mouseup", endObjectDrag);
+  controls.addEventListener("change", () => requestRender());
+  cadControls.addEventListener("change", () => requestRender());
   window.addEventListener("resize", resize);
 }
 
@@ -1356,6 +1364,7 @@ function setupLights() {
 
 function syncInteriorLightingVisibility() {
   interiorLightGroup.visible = roofVisible && !cadMode;
+  requestRender(true);
 }
 
 function buildScene() {
@@ -1564,6 +1573,7 @@ function rebuildWalls() {
   updateStatus();
   if (columnEditorOpen) syncColumnEditor();
   if (signEditorOpen) syncSignEditor();
+  requestRender(true);
 }
 
 function rebuildRoofPreview() {
@@ -2093,6 +2103,7 @@ function rebuildCanopies() {
     selectedCanopyPostIndex = null;
   }
   canopyGroup.visible = !cadMode;
+  requestRender(true);
 }
 
 function getCanopyGroundY(canopy) {
@@ -3308,7 +3319,24 @@ function addFurniture() {
 function rebuildFurniture() {
   clearGroup(furnitureGroup);
   addFurniture();
+  applyFurnitureShadowPolicy();
   furnitureGroup.visible = furnitureVisible && !cadMode;
+  requestRender(true);
+}
+
+function applyFurnitureShadowPolicy() {
+  const size = new THREE.Vector3();
+  furnitureGroup.traverse((object) => {
+    if (!object.isMesh || !object.geometry) return;
+    if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+    object.geometry.boundingBox.getSize(size);
+    const width = Math.abs(size.x * object.scale.x);
+    const height = Math.abs(size.y * object.scale.y);
+    const depth = Math.abs(size.z * object.scale.z);
+    const largestFaceArea = Math.max(width * height, width * depth, height * depth);
+    object.castShadow = largestFaceArea >= 0.3;
+    object.receiveShadow = true;
+  });
 }
 
 function rectMetrics(item) {
@@ -3676,6 +3704,7 @@ function applyCadMode() {
     scene.background = defaultBackground.clone();
     scene.fog = defaultFog;
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.needsUpdate = true;
     cadControls.enabled = false;
     controls.enabled = true;
     toggleCadViewButton?.classList.remove("is-active");
@@ -3684,6 +3713,7 @@ function applyCadMode() {
   syncInteriorLightingVisibility();
   rebuildWalls();
   updateStatus();
+  requestRender(true);
 }
 
 function addDecor() {
@@ -5489,6 +5519,7 @@ function setCameraPreset(preset) {
     cadControls.target.set(siteTarget.x, officeElevation, siteTarget.z);
     cadCamera.updateProjectionMatrix();
     cadControls.update();
+    requestRender();
     return;
   }
   if (preset === "top") {
@@ -5507,6 +5538,7 @@ function setCameraPreset(preset) {
     controls.target.set(buildingTarget.x + 0.4, officeElevation + 0.2, buildingTarget.z + 0.3);
   }
   controls.update();
+  requestRender();
 }
 
 function updateStatus() {
@@ -5549,10 +5581,18 @@ function resize() {
   camera.updateProjectionMatrix();
   updateCadCameraFrustum();
   renderer.setSize(width, height, false);
+  requestRender();
 }
 
-function animate() {
-  getActiveControls().update();
+function requestRender(updateShadows = false) {
+  if (updateShadows && renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
+  if (renderFrameId !== null) return;
+  renderFrameId = requestAnimationFrame(renderFrame);
+}
+
+function renderFrame() {
+  renderFrameId = null;
+  const controlsChanged = getActiveControls().update();
   renderer.render(scene, getActiveCamera());
-  requestAnimationFrame(animate);
+  if (controlsChanged) requestRender();
 }
