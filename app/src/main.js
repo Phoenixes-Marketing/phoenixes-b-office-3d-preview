@@ -18,6 +18,7 @@ const toggleWallHeightButton = document.querySelector("#toggleWallHeight");
 const toggleFurnitureButton = document.querySelector("#toggleFurniture");
 const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCanopyEditorButton = document.querySelector("#toggleCanopyEditor");
+const toggleParkingEditorButton = document.querySelector("#toggleParkingEditor");
 const toggleSignEditorButton = document.querySelector("#toggleSignEditor");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
 const toggleRoofButton = document.querySelector("#toggleRoof");
@@ -83,6 +84,24 @@ const canopyInputs = {
   postSpread: document.querySelector("#canopyPostSpread"),
   postInset: document.querySelector("#canopyPostInset"),
   postSize: document.querySelector("#canopyPostSize"),
+};
+const parkingEditor = document.querySelector("#parkingEditor");
+const closeParkingEditorButton = document.querySelector("#closeParkingEditor");
+const parkingSelect = document.querySelector("#parkingSelect");
+const parkingSummary = document.querySelector("#parkingSummary");
+const parkingEditorNote = document.querySelector("#parkingEditorNote");
+const focusParkingButton = document.querySelector("#focusParking");
+const resetParkingButton = document.querySelector("#resetParking");
+const parkingInputs = {
+  count: document.querySelector("#parkingCount"),
+  columns: document.querySelector("#parkingColumns"),
+  x: document.querySelector("#parkingX"),
+  z: document.querySelector("#parkingZ"),
+  w: document.querySelector("#parkingWidth"),
+  d: document.querySelector("#parkingDepth"),
+  spacingX: document.querySelector("#parkingSpacingX"),
+  spacingZ: document.querySelector("#parkingSpacingZ"),
+  rot: document.querySelector("#parkingRotation"),
 };
 const signEditor = document.querySelector("#signEditor");
 const closeSignEditorButton = document.querySelector("#closeSignEditor");
@@ -173,7 +192,7 @@ const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
 const WORKSPACE_STORAGE_KEY = "phoenixes-b-office-3d-preview:workspace:v1";
 const SYSTEM_BASELINE_URL = "./system-baseline.json";
 const PLAN_FORMAT = "phoenixes-office-column-plan";
-const PLAN_SCHEMA_VERSION = 9;
+const PLAN_SCHEMA_VERSION = 10;
 const WORKSPACE_FORMAT = "phoenixes-office-design-workspace";
 const WORKSPACE_SCHEMA_VERSION = 1;
 const ORIGINAL_SCHEME_ID = "original";
@@ -207,9 +226,10 @@ const labelGroup = new THREE.Group();
 const cadGroup = new THREE.Group();
 const roofGroup = new THREE.Group();
 const canopyGroup = new THREE.Group();
+const parkingGroup = new THREE.Group();
 const interiorLightGroup = new THREE.Group();
 const interactionGroup = new THREE.Group();
-root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, canopyGroup, interiorLightGroup, cadGroup, interactionGroup);
+root.add(floorGroup, wallGroup, furnitureGroup, fixtureGroup, labelGroup, roofGroup, canopyGroup, parkingGroup, interiorLightGroup, cadGroup, interactionGroup);
 
 const materials = {
   siteGround: new THREE.MeshStandardMaterial({ color: 0xe5e8e4, roughness: 0.86 }),
@@ -274,6 +294,9 @@ const materials = {
   parking: new THREE.MeshStandardMaterial({ color: 0x8a908d, roughness: 0.92 }),
   road: new THREE.MeshStandardMaterial({ color: 0x555c5c, roughness: 0.96 }),
   marking: new THREE.MeshStandardMaterial({ color: 0xf1f0e9, roughness: 0.72 }),
+  scooterMarking: new THREE.MeshStandardMaterial({ color: 0x8ed0bb, roughness: 0.72 }),
+  parkingVehicle: new THREE.MeshStandardMaterial({ color: 0x33444b, roughness: 0.48, metalness: 0.18 }),
+  scooterVehicle: new THREE.MeshStandardMaterial({ color: 0x2e7b69, roughness: 0.58, metalness: 0.12 }),
   curb: new THREE.MeshStandardMaterial({ color: 0xc9cbc6, roughness: 0.86 }),
   fabric: new THREE.MeshStandardMaterial({ color: 0xbfc9c2, roughness: 0.88 }),
   cushion: new THREE.MeshStandardMaterial({ color: 0xe7e3da, roughness: 0.86 }),
@@ -502,6 +525,7 @@ let furnitureVisible = true;
 let columnEditorOpen = false;
 let columnEditorCollapsed = false;
 let canopyEditorOpen = false;
+let parkingEditorOpen = false;
 let signEditorOpen = false;
 let editableWalls = [];
 let editableLowWalls = [];
@@ -511,8 +535,10 @@ let editableWindows = [];
 let editableFurniture = [];
 let editableRoof = null;
 let editableCanopies = [];
+let editableParking = [];
 let editableSigns = [];
 let selectedCanopyId = null;
+let selectedParkingId = null;
 let selectedCanopyPostIndex = null;
 let canopyDragAxis = "x";
 let canopyPostMeshes = [];
@@ -542,6 +568,7 @@ let pendingHistoryAction = null;
 let cadMode = false;
 let doorsOpen = true;
 let roofVisible = true;
+let parkingVisible = true;
 let labelsVisible = false;
 const defaultBackground = new THREE.Color(0xe8ecef);
 const defaultFog = scene.fog;
@@ -982,6 +1009,7 @@ function setWallHeightPanelOpen(open) {
   wallHeightPanelOpen = open;
   if (open && planStoragePanelOpen) setPlanStoragePanelOpen(false);
   if (open && canopyEditorOpen) setCanopyEditorOpen(false);
+  if (open && parkingEditorOpen) setParkingEditorOpen(false);
   if (open && signEditorOpen) setSignEditorOpen(false);
   if (open && columnEditorOpen) setColumnEditorCollapsed(true);
   if (wallHeightPanel) wallHeightPanel.hidden = !open;
@@ -994,6 +1022,7 @@ function setPlanStoragePanelOpen(open) {
   if (open) {
     setWallHeightPanelOpen(false);
     setCanopyEditorOpen(false);
+    setParkingEditorOpen(false);
     setSignEditorOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     refreshPlanStorageStatus();
@@ -1033,6 +1062,7 @@ function setColumnEditorOpen(open) {
     setWallHeightPanelOpen(false);
     setPlanStoragePanelOpen(false);
     setCanopyEditorOpen(false);
+    setParkingEditorOpen(false);
     setSignEditorOpen(false);
   } else {
     selectedColumnId = null;
@@ -1050,6 +1080,7 @@ function setCanopyEditorOpen(open) {
   if (open) {
     setWallHeightPanelOpen(false);
     setPlanStoragePanelOpen(false);
+    setParkingEditorOpen(false);
     setSignEditorOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     if (!selectedCanopyId || !editableCanopies.some((item) => item.id === selectedCanopyId)) {
@@ -1074,6 +1105,7 @@ function setSignEditorOpen(open) {
     setWallHeightPanelOpen(false);
     setPlanStoragePanelOpen(false);
     setCanopyEditorOpen(false);
+    setParkingEditorOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     if (!selectedSignId || !editableSigns.some((item) => item.id === selectedSignId)) {
       selectedSignId = editableSigns[0]?.id ?? null;
@@ -1171,6 +1203,36 @@ function bindControls() {
       selectedCanopyPostIndex = null;
       syncCanopyEditor();
       rebuildWalls();
+    });
+  });
+  toggleParkingEditorButton?.addEventListener("click", () => setParkingEditorOpen(!parkingEditorOpen));
+  closeParkingEditorButton?.addEventListener("click", () => setParkingEditorOpen(false));
+  parkingSelect?.addEventListener("change", () => {
+    selectedParkingId = parkingSelect.value;
+    syncParkingEditor();
+  });
+  Object.values(parkingInputs).forEach((input) => {
+    if (!input) return;
+    input.addEventListener("input", updateSelectedParkingFromFields);
+    ["pointerdown", "focus"].forEach((eventName) => {
+      input.addEventListener(eventName, () => beginHistoryAction("調整停車配置"));
+    });
+    ["change", "blur"].forEach((eventName) => input.addEventListener(eventName, commitHistoryAction));
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      updateSelectedParkingFromFields();
+      commitHistoryAction();
+      input.blur();
+    });
+  });
+  focusParkingButton?.addEventListener("click", focusSelectedParking);
+  resetParkingButton?.addEventListener("click", () => {
+    performHistoryAction("回到建議停車配置", () => {
+      editableParking = createDefaultParkingLayouts();
+      selectedParkingId = editableParking[0]?.id ?? null;
+      syncParkingEditor();
+      rebuildParking();
+      rebuildCadPlan();
     });
   });
   toggleSignEditorButton?.addEventListener("click", () => setSignEditorOpen(!signEditorOpen));
@@ -1371,6 +1433,7 @@ function buildScene() {
   addBaseFloor();
   rebuildFurniture();
   rebuildWalls();
+  rebuildParking();
   addFixtures();
   addLabels();
   labelGroup.visible = labelsVisible;
@@ -1404,53 +1467,31 @@ function addBaseFloor() {
 }
 
 function addConstructionSite() {
-  const { roadEdgeX, roadEdgeZ, eastParking, southParking, levels } = CONSTRUCTION_PLAN;
+  const { roadEdgeX, roadEdgeZ, eastParking, levels } = CONSTRUCTION_PLAN;
   addPlatform({ x0: bounds.x0, z0: roadEdgeZ, x1: bounds.x1, z1: bounds.z1, heightCm: levels.southRoad }, materials.road, floorGroup);
   addPlatform({ x0: roadEdgeX, z0: bounds.z0, x1: bounds.x1, z1: bounds.z1, heightCm: levels.southRoad }, materials.road, floorGroup);
   addPlatform({ x0: eastParking.x0, z0: eastParking.z0, x1: roadEdgeX, z1: 1120, heightCm: levels.eastParking }, materials.parking, floorGroup);
   addPlatform({ x0: 2180, z0: 1040, x1: roadEdgeX, z1: roadEdgeZ, heightCm: levels.eastParking }, materials.parking, floorGroup);
   addPlatform({ x0: -30, z0: CONSTRUCTION_PLAN.building.z1, x1: 2200, z1: roadEdgeZ, heightCm: levels.southRoad }, materials.parking, floorGroup);
 
-  const eastBays = Array.from({ length: eastParking.count }, (_, index) => ({
-    x: eastParking.x0 + eastParking.stallDepth / 2,
-    z: eastParking.z0 + eastParking.stallWidth * (index + 0.5),
-    w: eastParking.stallDepth,
-    d: eastParking.stallWidth,
-    rot: 0,
-    levelCm: levels.eastParking,
-  }));
-  eastBays.forEach(addParkingBay3D);
-
-  const southBays = Array.from({ length: southParking.count }, (_, index) => ({
-    x: southParking.startX + southParking.spacing * index,
-    z: southParking.centerZ,
-    w: southParking.stallDepth,
-    d: southParking.stallWidth,
-    rot: southParking.angle,
-    levelCm: levels.southRoad,
-  }));
-  southBays.forEach((bay) => {
-    addParkingBay3D(bay);
-  });
-
   addSiteCurb(roadEdgeX, (bounds.z0 + roadEdgeZ) / 2, 10, roadEdgeZ - bounds.z0, 0, levels.southRoad);
   addSiteCurb((bounds.x0 + roadEdgeX) / 2, roadEdgeZ, roadEdgeX - bounds.x0, 10, 0, levels.southRoad);
 }
 
-function addParkingBay3D(item) {
+function addParkingBay3D(item, targetGroup = floorGroup, marking = materials.marking) {
   const position = toWorld(item.x, item.z);
   const group = new THREE.Group();
   const width = item.w / 100;
   const depth = item.d / 100;
   const line = 0.045;
   const y = item.levelCm / 100 + 0.014;
-  addBoxToGroup(group, width, 0.024, line, materials.marking, 0, y, -depth / 2);
-  addBoxToGroup(group, width, 0.024, line, materials.marking, 0, y, depth / 2);
-  addBoxToGroup(group, line, 0.024, depth, materials.marking, -width / 2, y, 0);
-  addBoxToGroup(group, line, 0.024, depth, materials.marking, width / 2, y, 0);
+  addBoxToGroup(group, width, 0.024, line, marking, 0, y, -depth / 2);
+  addBoxToGroup(group, width, 0.024, line, marking, 0, y, depth / 2);
+  addBoxToGroup(group, line, 0.024, depth, marking, -width / 2, y, 0);
+  addBoxToGroup(group, line, 0.024, depth, marking, width / 2, y, 0);
   group.position.set(position.x, 0, position.z);
   group.rotation.y = -((item.rot ?? 0) * Math.PI) / 180;
-  floorGroup.add(group);
+  targetGroup.add(group);
 }
 
 function addSiteCurb(x, z, widthCm, depthCm, rot, levelCm) {
@@ -1566,6 +1607,7 @@ function rebuildWalls() {
   }
   rebuildRoofPreview();
   rebuildCanopies();
+  rebuildParking();
   addSelectedObjectOutline();
   addSelectedWallEndpointHandles();
   addSelectedRoofResizeHandles();
@@ -1890,16 +1932,16 @@ function createDefaultCanopies() {
     kind: "canopy",
     style: "cantilever",
     source: "A｜後柱懸臂單斜棚",
-    x: 1050,
+    x: 1110,
     z: 1860,
-    w: 2120,
+    w: 2230,
     d: 380,
     h: 330,
     rot: 0,
     roofRise: 50,
-    postSpread: 1620,
+    postSpread: 2130,
     postInset: 70,
-    postCount: 3,
+    postCount: 4,
     postSize: 30,
   };
   const fourPost = {
@@ -1923,6 +1965,135 @@ function createDefaultCanopies() {
   cantilever.posts = createCanopyPostLayout(cantilever);
   fourPost.posts = createCanopyPostLayout(fourPost);
   return [cantilever, fourPost];
+}
+
+function createDefaultParkingLayouts() {
+  return [
+    {
+      id: "parking-a-cars",
+      type: "parking",
+      kind: "parking",
+      source: "A 雨棚左側｜休旅車",
+      vehicleType: "car",
+      count: 3,
+      columns: 3,
+      x: 275,
+      z: 1900,
+      w: 550,
+      d: 250,
+      spacingX: 565,
+      spacingZ: 0,
+      rot: 0,
+      levelCm: CONSTRUCTION_PLAN.levels.southRoad,
+    },
+    {
+      id: "parking-a-scooters",
+      type: "parking",
+      kind: "parking",
+      source: "A 雨棚右側｜機車 5×2",
+      vehicleType: "scooter",
+      count: 10,
+      columns: 5,
+      x: 1740,
+      z: 1760,
+      w: 80,
+      d: 180,
+      spacingX: 85,
+      spacingZ: 180,
+      rot: 0,
+      levelCm: CONSTRUCTION_PLAN.levels.southRoad,
+    },
+    {
+      id: "parking-b-cars",
+      type: "parking",
+      kind: "parking",
+      source: "B 雨棚｜休旅車",
+      vehicleType: "car",
+      count: 4,
+      columns: 1,
+      x: 3030,
+      z: 165,
+      w: 550,
+      d: 250,
+      spacingX: 0,
+      spacingZ: 250,
+      rot: 0,
+      levelCm: CONSTRUCTION_PLAN.levels.eastParking,
+    },
+  ];
+}
+
+function clampParkingValue(value, minimum, maximum, fallback) {
+  const parsed = Number(value);
+  return Math.round(Math.min(maximum, Math.max(minimum, Number.isFinite(parsed) ? parsed : fallback)));
+}
+
+function normalizeParkingLayouts(items) {
+  const defaults = createDefaultParkingLayouts();
+  const source = Array.isArray(items) && items.length ? items : defaults;
+  if (source.length > 8) throw new Error("停車區資料數量不正確");
+  const usedIds = new Set();
+  return source.map((item, index) => {
+    const fallback = defaults.find((defaultItem) => defaultItem.id === item?.id)
+      ?? defaults[Math.min(index, defaults.length - 1)];
+    const vehicleType = item?.vehicleType === "scooter" ? "scooter" : "car";
+    const preferredId = typeof item?.id === "string" && item.id.trim() ? item.id.trim().slice(0, 120) : `parking-${index + 1}`;
+    let id = preferredId;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `${preferredId}-${suffix++}`;
+    usedIds.add(id);
+    const count = clampParkingValue(item?.count, 1, 16, fallback.count);
+    const minimumLength = vehicleType === "car" ? 220 : 50;
+    const minimumWidth = vehicleType === "car" ? 180 : 50;
+    return {
+      id,
+      type: "parking",
+      kind: "parking",
+      source: typeof item?.source === "string" ? item.source.slice(0, 120) : fallback.source,
+      vehicleType,
+      count,
+      columns: clampParkingValue(item?.columns, 1, count, fallback.columns),
+      x: clampParkingValue(item?.x, -1000, 5000, fallback.x),
+      z: clampParkingValue(item?.z, -1000, 3500, fallback.z),
+      w: clampParkingValue(item?.w, minimumLength, 700, fallback.w),
+      d: clampParkingValue(item?.d, minimumWidth, 400, fallback.d),
+      spacingX: clampParkingValue(item?.spacingX, 0, 800, fallback.spacingX),
+      spacingZ: clampParkingValue(item?.spacingZ, 0, 800, fallback.spacingZ),
+      rot: clampParkingValue(item?.rot, -90, 90, fallback.rot),
+      levelCm: item?.levelCm === CONSTRUCTION_PLAN.levels.eastParking
+        ? CONSTRUCTION_PLAN.levels.eastParking
+        : CONSTRUCTION_PLAN.levels.southRoad,
+    };
+  });
+}
+
+function serializeParkingLayout(item) {
+  return {
+    id: String(item.id),
+    type: "parking",
+    kind: "parking",
+    source: String(item.source ?? item.id).slice(0, 120),
+    vehicleType: item.vehicleType === "scooter" ? "scooter" : "car",
+    count: Math.round(item.count),
+    columns: Math.round(item.columns),
+    x: Math.round(item.x),
+    z: Math.round(item.z),
+    w: Math.round(item.w),
+    d: Math.round(item.d),
+    spacingX: Math.round(item.spacingX),
+    spacingZ: Math.round(item.spacingZ),
+    rot: Math.round(item.rot),
+    levelCm: Math.round(item.levelCm),
+  };
+}
+
+function getParkingBays(layout) {
+  const columns = Math.max(1, Math.min(layout.count, layout.columns));
+  return Array.from({ length: layout.count }, (_, index) => ({
+    ...layout,
+    x: layout.x + (index % columns) * layout.spacingX,
+    z: layout.z + Math.floor(index / columns) * layout.spacingZ,
+  }));
 }
 
 function createCanopyPostLayout(canopy) {
@@ -2077,6 +2248,228 @@ function updateSelectedCanopyFromFields() {
   ensureCanopyPosts(canopy, { reset: canopy.postSpread !== previousSpread || canopy.postInset !== previousInset });
   rebuildCanopies();
   rebuildCadPlan();
+}
+
+function getSelectedParking() {
+  return editableParking.find((item) => item.id === selectedParkingId) ?? editableParking[0] ?? null;
+}
+
+function getParkingSummaryText() {
+  const cars = editableParking
+    .filter((item) => item.vehicleType !== "scooter")
+    .reduce((total, item) => total + item.count, 0);
+  const scooters = editableParking
+    .filter((item) => item.vehicleType === "scooter")
+    .reduce((total, item) => total + item.count, 0);
+  const aCars = editableParking.find((item) => item.id === "parking-a-cars")?.count ?? 0;
+  const bCars = editableParking.find((item) => item.id === "parking-b-cars")?.count ?? 0;
+  return `共 ${cars} 休旅車格＋${scooters} 機車格｜A：${aCars} 休旅車＋${scooters} 機車；B：${bCars} 休旅車`;
+}
+
+function getParkingBounds(bay) {
+  const angle = ((bay.rot ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const halfW = bay.w / 2;
+  const halfD = bay.d / 2;
+  const corners = [
+    [-halfW, -halfD],
+    [halfW, -halfD],
+    [halfW, halfD],
+    [-halfW, halfD],
+  ].map(([x, z]) => ({ x: bay.x + x * cos - z * sin, z: bay.z + x * sin + z * cos }));
+  return {
+    x0: Math.min(...corners.map((point) => point.x)),
+    x1: Math.max(...corners.map((point) => point.x)),
+    z0: Math.min(...corners.map((point) => point.z)),
+    z1: Math.max(...corners.map((point) => point.z)),
+  };
+}
+
+function getCanopyPlanPosts(canopy) {
+  const angle = -((canopy.rot ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return ensureCanopyPosts(canopy).map((post) => ({
+    x: canopy.x + post.x * cos - post.z * sin,
+    z: canopy.z + post.x * sin + post.z * cos,
+    radius: canopy.postSize / 2,
+  }));
+}
+
+function getParkingWarnings() {
+  const warnings = [];
+  const allBays = editableParking.flatMap(getParkingBays);
+  if (allBays.some((bay) => {
+    const boundsForBay = getParkingBounds(bay);
+    return boundsForBay.x1 > CONSTRUCTION_PLAN.roadEdgeX || boundsForBay.z1 > CONSTRUCTION_PLAN.roadEdgeZ;
+  })) warnings.push("有車格超出道路界線");
+  const aCanopy = editableCanopies.find((item) => item.id === "canopy-cantilever");
+  const aParkingBays = editableParking
+    .filter((layout) => layout.id.startsWith("parking-a-"))
+    .flatMap(getParkingBays);
+  if (aCanopy && aParkingBays.some((bay) => getCanopyPlanPosts(aCanopy).some((post) => {
+    const boundsForBay = getParkingBounds(bay);
+    const clearance = 10 + post.radius;
+    return post.x >= boundsForBay.x0 - clearance
+      && post.x <= boundsForBay.x1 + clearance
+      && post.z >= boundsForBay.z0 - clearance
+      && post.z <= boundsForBay.z1 + clearance;
+  }))) warnings.push("A 區車格與雨棚柱淨距不足");
+  if (editableParking.some((layout) => {
+    const rows = Math.ceil(layout.count / Math.max(1, layout.columns));
+    return layout.vehicleType !== "scooter" && rows > 1 && layout.columns > 1;
+  })) warnings.push("汽車格不可採前後多排配置");
+  if (editableParking.some((layout) => layout.vehicleType !== "scooter" && (layout.w < 550 || layout.d < 250))) {
+    warnings.push("有汽車格小於休旅車 550×250cm 基準");
+  }
+  const entranceClearZone = { x0: 2180, x1: 2780, z0: 1200, z1: 2030 };
+  if (allBays.some((bay) => {
+    const boundsForBay = getParkingBounds(bay);
+    return Math.min(boundsForBay.x1, entranceClearZone.x1) - Math.max(boundsForBay.x0, entranceClearZone.x0) > 5
+      && Math.min(boundsForBay.z1, entranceClearZone.z1) - Math.max(boundsForBay.z0, entranceClearZone.z0) > 5;
+  })) warnings.push("有車格占用入口前方淨空區");
+  const parkingBounds = allBays.map(getParkingBounds);
+  if (parkingBounds.some((boundsForBay, index) => parkingBounds.slice(index + 1).some((otherBounds) => (
+    Math.min(boundsForBay.x1, otherBounds.x1) - Math.max(boundsForBay.x0, otherBounds.x0) > 5
+    && Math.min(boundsForBay.z1, otherBounds.z1) - Math.max(boundsForBay.z0, otherBounds.z0) > 5
+  )))) warnings.push("有車格彼此重疊");
+  if (aParkingBays.some((bay) => getParkingBounds(bay).z0 < CONSTRUCTION_PLAN.building.z1 + 20)) {
+    warnings.push("A 區車格與南側牆面淨距不足");
+  }
+  if (aCanopy) {
+    const canopyBounds = getParkingBounds({
+      x: aCanopy.x,
+      z: aCanopy.z,
+      w: aCanopy.w,
+      d: aCanopy.d,
+      rot: aCanopy.rot,
+    });
+    if (aParkingBays.some((bay) => {
+      const boundsForBay = getParkingBounds(bay);
+      return boundsForBay.x0 < canopyBounds.x0 - 5
+        || boundsForBay.x1 > canopyBounds.x1 + 5
+        || boundsForBay.z0 < canopyBounds.z0 - 5
+        || boundsForBay.z1 > canopyBounds.z1 + 5;
+    })) warnings.push("A 區有車格超出遮雨棚範圍");
+  }
+  return warnings;
+}
+
+function syncParkingEditor() {
+  const current = getSelectedParking();
+  if (!current) return;
+  selectedParkingId = current.id;
+  if (parkingSelect) {
+    parkingSelect.replaceChildren(...editableParking.map((item, index) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.source || `停車區 ${index + 1}`;
+      return option;
+    }));
+    parkingSelect.value = current.id;
+  }
+  Object.entries(parkingInputs).forEach(([key, input]) => {
+    if (input) input.value = String(Math.round(current[key]));
+  });
+  if (parkingSummary) parkingSummary.textContent = getParkingSummaryText();
+  if (parkingEditorNote) {
+    const warnings = getParkingWarnings();
+    parkingEditorNote.textContent = warnings.length
+      ? `需調整：${warnings.join("；")}。`
+      : "已通過道路、牆面、遮雨棚、入口、車格重疊與柱位檢查；A 區為 3 休旅車＋機車 5×2，東側保留 4 休旅車。";
+  }
+}
+
+function updateSelectedParkingFromFields() {
+  const parking = getSelectedParking();
+  if (!parking) return;
+  const minimumLength = parking.vehicleType === "car" ? 220 : 50;
+  const minimumWidth = parking.vehicleType === "car" ? 180 : 50;
+  const previousCount = parking.count;
+  const previousColumns = parking.columns;
+  const nextCount = clampParkingValue(parkingInputs.count?.value, 1, 16, parking.count);
+  const requestedColumns = Number(parkingInputs.columns?.value);
+  const shouldExtendSingleRow = parking.spacingZ === 0
+    && previousColumns === previousCount
+    && requestedColumns === previousColumns;
+  parking.count = nextCount;
+  parking.columns = shouldExtendSingleRow
+    ? nextCount
+    : clampParkingValue(parkingInputs.columns?.value, 1, parking.count, parking.columns);
+  parking.x = clampParkingValue(parkingInputs.x?.value, -1000, 5000, parking.x);
+  parking.z = clampParkingValue(parkingInputs.z?.value, -1000, 3500, parking.z);
+  parking.w = clampParkingValue(parkingInputs.w?.value, minimumLength, 700, parking.w);
+  parking.d = clampParkingValue(parkingInputs.d?.value, minimumWidth, 400, parking.d);
+  parking.spacingX = clampParkingValue(parkingInputs.spacingX?.value, 0, 800, parking.spacingX);
+  parking.spacingZ = clampParkingValue(parkingInputs.spacingZ?.value, 0, 800, parking.spacingZ);
+  parking.rot = clampParkingValue(parkingInputs.rot?.value, -90, 90, parking.rot);
+  syncParkingEditor();
+  rebuildParking();
+  rebuildCadPlan();
+}
+
+function setParkingEditorOpen(open) {
+  parkingEditorOpen = open;
+  if (parkingEditor) parkingEditor.hidden = !open;
+  toggleParkingEditorButton?.classList.toggle("is-active", open);
+  toggleParkingEditorButton?.setAttribute("aria-expanded", String(open));
+  if (open) {
+    setWallHeightPanelOpen(false);
+    setPlanStoragePanelOpen(false);
+    setCanopyEditorOpen(false);
+    setSignEditorOpen(false);
+    if (columnEditorOpen) setColumnEditorOpen(false);
+    if (!selectedParkingId || !editableParking.some((item) => item.id === selectedParkingId)) {
+      selectedParkingId = editableParking[0]?.id ?? null;
+    }
+  }
+  syncParkingEditor();
+}
+
+function focusSelectedParking() {
+  const parking = getSelectedParking();
+  if (!parking || cadMode) return;
+  const bays = getParkingBays(parking);
+  const targetX = bays.reduce((sum, item) => sum + item.x, 0) / bays.length;
+  const targetZ = bays.reduce((sum, item) => sum + item.z, 0) / bays.length;
+  const target = toWorld(targetX, targetZ);
+  const spread = Math.max(parking.w, parking.d, parking.spacingX * Math.max(0, parking.columns - 1), parking.spacingZ * Math.ceil(parking.count / parking.columns - 1)) / 100;
+  controls.target.set(target.x, parking.levelCm / 100 + 0.4, target.z);
+  camera.position.set(target.x + spread * 0.9 + 2, parking.levelCm / 100 + spread * 0.72 + 2.6, target.z + spread * 1.15 + 2.4);
+  controls.update();
+}
+
+function rebuildParking() {
+  clearGroup(parkingGroup);
+  editableParking.flatMap(getParkingBays).forEach((bay, index) => addParkingBayPreview(bay, index));
+  parkingGroup.visible = parkingVisible && !cadMode;
+  requestRender(true);
+}
+
+function addParkingBayPreview(item, index) {
+  const position = toWorld(item.x, item.z);
+  const group = new THREE.Group();
+  const width = item.w / 100;
+  const depth = item.d / 100;
+  const line = item.vehicleType === "scooter" ? 0.025 : 0.045;
+  const y = item.levelCm / 100 + 0.016;
+  const marking = item.vehicleType === "scooter" ? materials.scooterMarking : materials.marking;
+  addBoxToGroup(group, width, 0.024, line, marking, 0, y, -depth / 2);
+  addBoxToGroup(group, width, 0.024, line, marking, 0, y, depth / 2);
+  addBoxToGroup(group, line, 0.024, depth, marking, -width / 2, y, 0);
+  addBoxToGroup(group, line, 0.024, depth, marking, width / 2, y, 0);
+  if (item.vehicleType === "scooter") {
+    addBoxToGroup(group, Math.min(width * 0.58, 0.46), 0.14, Math.min(depth * 0.64, 1.04), materials.scooterVehicle, 0, y + 0.07, 0.03);
+    addBoxToGroup(group, Math.min(width * 0.72, 0.52), 0.04, 0.045, materials.scooterVehicle, 0, y + 0.23, -Math.min(depth * 0.3, 0.45));
+  } else {
+    addBoxToGroup(group, width * 0.82, 0.32, depth * 0.76, materials.parkingVehicle, 0, y + 0.16, 0);
+    addBoxToGroup(group, width * 0.42, 0.30, depth * 0.68, materials.parkingVehicle, width * 0.06, y + 0.46, 0);
+  }
+  group.position.set(position.x, 0, position.z);
+  group.rotation.y = -((item.rot ?? 0) * Math.PI) / 180;
+  group.name = `parking-${index + 1}`;
+  parkingGroup.add(group);
 }
 
 function rebuildCanopies() {
@@ -3005,7 +3398,7 @@ function addCadMeterGrid(y) {
 }
 
 function addConstructionCad(y) {
-  const { building, axesX, axesZ, eastParking, southParking, roadEdgeX, roadEdgeZ, levels } = CONSTRUCTION_PLAN;
+  const { building, axesX, axesZ, roadEdgeX, roadEdgeZ, levels } = CONSTRUCTION_PLAN;
   addCadPlanPolyline([
     [building.x0, building.z0],
     [building.x1, building.z0],
@@ -3026,26 +3419,15 @@ function addConstructionCad(y) {
     addCadTextAt(axis.label, -48, axis.value, y, 0.55);
   });
 
-  const eastBays = Array.from({ length: eastParking.count }, (_, index) => ({
-    x: eastParking.x0 + eastParking.stallDepth / 2,
-    z: eastParking.z0 + eastParking.stallWidth * (index + 0.5),
-    w: eastParking.stallDepth,
-    d: eastParking.stallWidth,
-    rot: 0,
-  }));
-  eastBays.forEach((bay) => addCadOrientedRect(bay.x, bay.z, bay.w, bay.d, bay.rot, cadMaterials.medium, y));
-  addCadTextAt("東側停車 4 格｜250×550cm", 3030, 1085, y, 1.05);
-
-  const southBays = Array.from({ length: southParking.count }, (_, index) => ({
-    x: southParking.startX + southParking.spacing * index,
-    z: southParking.centerZ,
-    w: southParking.stallDepth,
-    d: southParking.stallWidth,
-    rot: southParking.angle,
-  }));
-  southBays.forEach((bay) => addCadOrientedRect(bay.x, bay.z, bay.w, bay.d, bay.rot, cadMaterials.medium, y));
-  addCadTextAt("南側斜列 5 格｜約33°（估算）", 1050, 2135, y, 1.15);
-  addCadTextAt("身障車位（估）", 180, 1740, y, 0.78);
+  editableParking.forEach((layout) => {
+    const material = layout.vehicleType === "scooter" ? cadMaterials.light : cadMaterials.medium;
+    getParkingBays(layout).forEach((bay) => addCadOrientedRect(bay.x, bay.z, bay.w, bay.d, bay.rot, material, y));
+    const rows = Math.ceil(layout.count / layout.columns);
+    const labelX = layout.x + Math.max(0, layout.columns - 1) * layout.spacingX / 2;
+    const labelZ = layout.z + Math.max(0, rows - 1) * layout.spacingZ / 2 + layout.d / 2 + 42;
+    const vehicleLabel = layout.vehicleType === "scooter" ? "機車" : "休旅車";
+    addCadTextAt(`${layout.source}｜${layout.count} ${vehicleLabel}格｜${layout.w}×${layout.d}cm`, labelX, labelZ, y, 0.78);
+  });
   addCadTextAt("污水設施 200×500cm", 420, 1980, y, 0.85);
   addCadTextAt("退縮騎樓地", 2670, 1785, y, 0.95);
   addCadTextAt("15M 永華一路", 3650, 880, y, 1.05);
@@ -3684,6 +4066,7 @@ function applyCadMode() {
     labelGroup.visible = false;
     roofGroup.visible = false;
     canopyGroup.visible = false;
+    parkingGroup.visible = false;
     cadGroup.visible = true;
     scene.background = new THREE.Color(0xffffff);
     scene.fog = null;
@@ -3700,6 +4083,7 @@ function applyCadMode() {
     labelGroup.visible = labelsVisible;
     roofGroup.visible = roofVisible;
     canopyGroup.visible = true;
+    parkingGroup.visible = parkingVisible;
     cadGroup.visible = false;
     scene.background = defaultBackground.clone();
     scene.fog = defaultFog;
@@ -4359,6 +4743,7 @@ function getCurrentPlanState() {
     furniture: editableFurniture.map(serializeEditableItem),
     roof: serializeEditableItem(editableRoof),
     canopies: editableCanopies.map(serializeCanopy),
+    parking: editableParking.map(serializeParkingLayout),
     signs: editableSigns.map(serializeRoofSign),
   };
 }
@@ -4515,6 +4900,7 @@ function getOriginalEditableState(
     furniture: makeEditableFurniture(DESIGN_ITEMS),
     roof: createDefaultRoof(),
     canopies: createDefaultCanopies(),
+    parking: createDefaultParkingLayouts(),
     signs: createDefaultRoofSigns(),
   };
   normalizeEntranceFacadeWall(original.walls);
@@ -4632,10 +5018,12 @@ function normalizePlanState(plan) {
       furniture: normalizeEditableItems(plan.furniture ?? fallback.furniture, "furniture", 200),
       roof: normalizeEditableItems([plan.roof ?? fallback.roof], "roof", 1)[0],
       canopies: normalizeCanopies(plan.canopies ?? fallback.canopies),
+      parking: normalizeParkingLayouts(plan.parking ?? fallback.parking),
       signs: normalizeRoofSigns(plan.signs ?? fallback.signs),
     };
   }
   collections.canopies ??= createDefaultCanopies();
+  collections.parking ??= createDefaultParkingLayouts();
   collections.signs ??= createDefaultRoofSigns();
   if (schemaVersion < 4) {
     collections.doors.forEach((door) => {
@@ -4663,6 +5051,7 @@ function normalizePlanState(plan) {
     furniture: collections.furniture.map(serializeEditableItem),
     roof: serializeEditableItem(collections.roof),
     canopies: normalizeCanopies(collections.canopies).map(serializeCanopy),
+    parking: normalizeParkingLayouts(collections.parking).map(serializeParkingLayout),
     signs: normalizeRoofSigns(collections.signs).map(serializeRoofSign),
   };
 }
@@ -4689,8 +5078,10 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   editableFurniture = normalizeEditableItems(normalized.furniture, "furniture", 200);
   editableRoof = normalizeEditableItems([normalized.roof], "roof", 1)[0];
   editableCanopies = normalizeCanopies(normalized.canopies);
+  editableParking = normalizeParkingLayouts(normalized.parking);
   editableSigns = normalizeRoofSigns(normalized.signs);
   selectedCanopyId = editableCanopies.some((item) => item.id === selectedCanopyId) ? selectedCanopyId : editableCanopies[0]?.id ?? null;
+  selectedParkingId = editableParking.some((item) => item.id === selectedParkingId) ? selectedParkingId : editableParking[0]?.id ?? null;
   selectedSignId = editableSigns.some((item) => item.id === selectedSignId) ? selectedSignId : editableSigns[0]?.id ?? null;
   selectedCanopyPostIndex = null;
   draggingCanopyPost = null;
@@ -4705,6 +5096,7 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   if (clearHistory) clearEditHistory();
   updateWallHeightLabel();
   syncCanopyEditor();
+  syncParkingEditor();
   syncSignEditor();
   rebuildFurniture();
   rebuildWalls();
@@ -5026,6 +5418,12 @@ function planStateSignature(plan) {
     postCount: item.postCount == null ? undefined : Number(item.postCount),
     postSize: item.postSize == null ? undefined : Number(item.postSize),
     posts: Array.isArray(item.posts) ? item.posts.map((post) => ({ x: Number(post.x), z: Number(post.z) })) : undefined,
+    vehicleType: item.vehicleType,
+    count: item.count == null ? undefined : Number(item.count),
+    columns: item.columns == null ? undefined : Number(item.columns),
+    spacingX: item.spacingX == null ? undefined : Number(item.spacingX),
+    spacingZ: item.spacingZ == null ? undefined : Number(item.spacingZ),
+    levelCm: item.levelCm == null ? undefined : Number(item.levelCm),
     face: item.face,
     u: item.u == null ? undefined : Number(item.u),
     v: item.v == null ? undefined : Number(item.v),
@@ -5046,6 +5444,7 @@ function planStateSignature(plan) {
     furniture: serializeCollection(plan.furniture),
     roof: serializeCollection([plan.roof]),
     canopies: serializeCollection(plan.canopies ?? []),
+    parking: serializeCollection(plan.parking ?? []),
     signs: serializeCollection(plan.signs ?? []),
   });
 }

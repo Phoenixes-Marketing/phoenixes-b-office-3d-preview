@@ -1,7 +1,7 @@
 {
   "format": "phoenixes-office-column-plan",
-  "schemaVersion": 9,
-  "savedAt": "2026-07-24T05:02:56.056Z",
+  "schemaVersion": 10,
+  "savedAt": "2026-07-24T14:18:59.5270575+08:00",
   "wallHeightM": 3,
   "exteriorWallHeightM": 5.6,
   "columnHeightM": 5.6,
@@ -1908,21 +1908,25 @@
       "h": 330,
       "rot": 0,
       "roofRise": 50,
-      "postSpread": 1620,
+      "postSpread": 2130,
       "postInset": 70,
-      "postCount": 3,
+      "postCount": 4,
       "postSize": 30,
       "posts": [
         {
-          "x": -810,
+          "x": -1065,
           "z": -120
         },
         {
-          "x": 0,
+          "x": -355,
           "z": -120
         },
         {
-          "x": 810,
+          "x": 355,
+          "z": -120
+        },
+        {
+          "x": 1065,
           "z": -120
         }
       ]
@@ -1962,6 +1966,59 @@
           "z": 215
         }
       ]
+    }
+  ],
+  "parking": [
+    {
+      "id": "parking-a-cars",
+      "type": "parking",
+      "kind": "parking",
+      "source": "A 雨棚左側｜休旅車",
+      "vehicleType": "car",
+      "count": 3,
+      "columns": 3,
+      "x": 275,
+      "z": 1900,
+      "w": 550,
+      "d": 250,
+      "spacingX": 565,
+      "spacingZ": 0,
+      "rot": 0,
+      "levelCm": 15
+    },
+    {
+      "id": "parking-a-scooters",
+      "type": "parking",
+      "kind": "parking",
+      "source": "A 雨棚右側｜機車 5×2",
+      "vehicleType": "scooter",
+      "count": 10,
+      "columns": 5,
+      "x": 1740,
+      "z": 1760,
+      "w": 80,
+      "d": 180,
+      "spacingX": 85,
+      "spacingZ": 180,
+      "rot": 0,
+      "levelCm": 15
+    },
+    {
+      "id": "parking-b-cars",
+      "type": "parking",
+      "kind": "parking",
+      "source": "B 雨棚｜休旅車",
+      "vehicleType": "car",
+      "count": 4,
+      "columns": 1,
+      "x": 3030,
+      "z": 165,
+      "w": 550,
+      "d": 250,
+      "spacingX": 0,
+      "spacingZ": 250,
+      "rot": 0,
+      "levelCm": 25
     }
   ],
   "signs": [

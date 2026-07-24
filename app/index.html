@@ -28,6 +28,7 @@
           </div>
           <div class="tool-group" aria-label="編輯工具">
             <button id="toggleCanopyEditor" class="icon-button" type="button" title="開啟遮雨棚編輯" aria-label="開啟遮雨棚編輯" aria-expanded="false" aria-controls="canopyEditor"><i data-lucide="umbrella"></i><span>雨棚</span></button>
+            <button id="toggleParkingEditor" class="icon-button" type="button" title="開啟停車規劃" aria-label="開啟停車規劃" aria-expanded="false" aria-controls="parkingEditor"><i data-lucide="square-parking"></i><span>停車</span></button>
             <button id="toggleSignEditor" class="icon-button" type="button" title="開啟屋頂招牌編輯" aria-label="開啟屋頂招牌編輯" aria-expanded="false" aria-controls="signEditor"><i data-lucide="type"></i><span>招牌</span></button>
             <button id="toggleColumnEditor" class="icon-button" type="button" title="開啟物件編輯" aria-label="開啟物件編輯" aria-expanded="false" aria-controls="columnEditor"><i data-lucide="pencil"></i><span>編輯</span></button>
             <button id="togglePlanStorage" class="icon-button" type="button" title="開啟版本與備份" aria-label="開啟版本與備份" aria-expanded="false" aria-controls="planStoragePanel"><i data-lucide="save"></i><span>版本</span></button>
@@ -127,6 +128,35 @@
         <div class="canopy-editor__actions">
           <button id="focusCanopy" type="button"><i data-lucide="focus"></i><span>聚焦選取雨棚</span></button>
           <button id="resetCanopies" type="button"><i data-lucide="rotate-ccw"></i><span>重設兩座範例</span></button>
+        </div>
+      </section>
+      <section class="hud canopy-editor parking-editor" id="parkingEditor" hidden>
+        <div class="canopy-editor__header">
+          <div class="canopy-editor__title">
+            <strong>停車規劃</strong>
+            <span id="parkingSummary">A：3 休旅車＋10 機車；B：4 休旅車</span>
+          </div>
+          <button id="closeParkingEditor" class="mini-icon-button" type="button" title="關閉停車規劃" aria-label="關閉停車規劃"><i data-lucide="x"></i></button>
+        </div>
+        <label class="canopy-editor__selector">
+          <span>目前區域</span>
+          <select id="parkingSelect" aria-label="選擇要編輯的停車區域"></select>
+        </label>
+        <div class="canopy-fields parking-fields">
+          <label><span>格數</span><input id="parkingCount" type="number" min="1" max="16" step="1" /></label>
+          <label><span>每列格數</span><input id="parkingColumns" type="number" min="1" max="16" step="1" /></label>
+          <label><span>起點 X cm</span><input id="parkingX" type="number" min="-1000" max="5000" step="5" /></label>
+          <label><span>起點 Z cm</span><input id="parkingZ" type="number" min="-1000" max="3500" step="5" /></label>
+          <label><span>格長 cm</span><input id="parkingWidth" type="number" min="60" max="700" step="5" /></label>
+          <label><span>格寬 cm</span><input id="parkingDepth" type="number" min="60" max="400" step="5" /></label>
+          <label><span>X 間距 cm</span><input id="parkingSpacingX" type="number" min="0" max="800" step="5" /></label>
+          <label><span>Z 間距 cm</span><input id="parkingSpacingZ" type="number" min="0" max="800" step="5" /></label>
+          <label><span>車格角度 °</span><input id="parkingRotation" type="number" min="-90" max="90" step="1" /></label>
+        </div>
+        <p class="canopy-editor__note" id="parkingEditorNote">本方案以道路界線與 A 棚柱的車體淨距作為檢查條件；調整後會即時顯示提示。</p>
+        <div class="canopy-editor__actions">
+          <button id="focusParking" type="button"><i data-lucide="focus"></i><span>聚焦選取區域</span></button>
+          <button id="resetParking" type="button"><i data-lucide="rotate-ccw"></i><span>回到建議配置</span></button>
         </div>
       </section>
       <section class="hud sign-editor" id="signEditor" hidden>
