@@ -505,6 +505,180 @@ body,
   height: 15px;
 }
 
+.facade-material-panel {
+  top: 82px;
+  right: 14px;
+  width: min(388px, calc(100vw - 28px));
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.facade-material-panel[hidden] {
+  display: none;
+}
+
+.facade-material-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.facade-material-panel__title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.facade-material-panel__title strong {
+  font-size: 14px;
+}
+
+.facade-material-panel__title span {
+  overflow: hidden;
+  color: #63707a;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facade-surface-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 8px;
+}
+
+.facade-surface-tabs button {
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 0;
+  color: #4f5c64;
+  background: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.facade-surface-tabs button + button {
+  border-left: 1px solid rgba(69, 82, 92, 0.2);
+}
+
+.facade-surface-tabs button.is-active {
+  color: #ffffff;
+  background: #407d72;
+}
+
+.facade-material-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.facade-material-grid button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 7px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid rgba(69, 82, 92, 0.2);
+  border-radius: 8px;
+  color: #26343d;
+  background: #ffffff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.facade-material-grid button:hover,
+.facade-material-grid button.is-selected {
+  border-color: #5da392;
+  background: #eaf4f0;
+  box-shadow: inset 0 0 0 1px rgba(67, 127, 114, 0.18);
+}
+
+.facade-material-grid strong,
+.facade-material-grid small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facade-material-grid strong {
+  align-self: end;
+  font-size: 11px;
+}
+
+.facade-material-grid small {
+  align-self: start;
+  color: #63707a;
+  font-size: 10px;
+}
+
+.facade-material-swatch {
+  grid-row: 1 / -1;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(40, 48, 52, 0.3);
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.facade-material-swatch--sb01,
+.facade-material-swatch--sb02,
+.facade-material-swatch--sb03 {
+  background-size: 100% 4px;
+}
+
+.facade-material-swatch--sb01 {
+  background-color: #f2f5f7;
+  background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.78) 0 1px, rgba(139,151,160,0.24) 1px 2px, transparent 2px 4px);
+}
+
+.facade-material-swatch--sb02 {
+  background-color: #ffffff;
+  background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.94) 0 1px, rgba(177,192,201,0.16) 1px 2px, transparent 2px 4px);
+}
+
+.facade-material-swatch--sb03 {
+  background-color: #bfc6cb;
+  background-image: repeating-linear-gradient(0deg, rgba(244,250,255,0.44) 0 1px, rgba(42,57,67,0.36) 1px 2px, transparent 2px 4px);
+}
+
+.facade-material-swatch--st02 {
+  background-color: #783b14;
+  background-image: repeating-linear-gradient(8deg, rgba(44,15,4,0.44) 0 2px, transparent 2px 7px, rgba(234,151,75,0.3) 7px 9px, transparent 9px 14px);
+  filter: brightness(1.3) saturate(0.72);
+}
+
+.facade-material-swatch--st06 {
+  background-color: #d7c0a5;
+  background-image: repeating-linear-gradient(-5deg, rgba(110,75,48,0.3) 0 1px, transparent 1px 6px, rgba(255,250,234,0.5) 6px 8px, transparent 8px 13px);
+  filter: brightness(1.3) saturate(0.72);
+}
+
+.facade-material-swatch--st07 {
+  background-color: #b97932;
+  background-image: repeating-linear-gradient(5deg, rgba(82,43,15,0.38) 0 2px, transparent 2px 8px, rgba(245,195,105,0.3) 8px 11px, transparent 11px 17px);
+  filter: brightness(1.3) saturate(0.72);
+}
+
+.facade-material-panel__note {
+  margin: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: #44545e;
+  background: rgba(237, 242, 240, 0.82);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 .plan-storage-panel {
   left: 14px;
   bottom: 14px;
@@ -931,6 +1105,17 @@ body,
   }
 
   .sign-editor {
+    top: auto;
+    bottom: 14px;
+    left: 14px;
+    right: 14px;
+    width: auto;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    padding: 9px;
+  }
+
+  .facade-material-panel {
     top: auto;
     bottom: 14px;
     left: 14px;
