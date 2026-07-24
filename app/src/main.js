@@ -20,6 +20,7 @@ const toggleColumnEditorButton = document.querySelector("#toggleColumnEditor");
 const toggleCanopyEditorButton = document.querySelector("#toggleCanopyEditor");
 const toggleParkingEditorButton = document.querySelector("#toggleParkingEditor");
 const toggleSignEditorButton = document.querySelector("#toggleSignEditor");
+const toggleFacadeMaterialButton = document.querySelector("#toggleFacadeMaterial");
 const toggleCadViewButton = document.querySelector("#toggleCadView");
 const toggleRoofButton = document.querySelector("#toggleRoof");
 const toggleDoorOpenButton = document.querySelector("#toggleDoorOpen");
@@ -117,6 +118,11 @@ const signInputs = {
   depth: document.querySelector("#signDepth"),
   glow: document.querySelector("#signGlow"),
 };
+const facadeMaterialPanel = document.querySelector("#facadeMaterialPanel");
+const closeFacadeMaterialButton = document.querySelector("#closeFacadeMaterial");
+const facadeMaterialHint = document.querySelector("#facadeMaterialHint");
+const facadeSurfaceButtons = [...document.querySelectorAll("[data-facade-surface]")];
+const facadeMaterialButtons = [...document.querySelectorAll("[data-facade-material]")];
 const columnInputs = {
   x: document.querySelector("#columnX"),
   z: document.querySelector("#columnZ"),
@@ -192,7 +198,7 @@ const PLAN_STORAGE_KEY = "phoenixes-b-office-3d-preview:draft:v1";
 const WORKSPACE_STORAGE_KEY = "phoenixes-b-office-3d-preview:workspace:v1";
 const SYSTEM_BASELINE_URL = "./system-baseline.json";
 const PLAN_FORMAT = "phoenixes-office-column-plan";
-const PLAN_SCHEMA_VERSION = 10;
+const PLAN_SCHEMA_VERSION = 12;
 const WORKSPACE_FORMAT = "phoenixes-office-design-workspace";
 const WORKSPACE_SCHEMA_VERSION = 1;
 const ORIGINAL_SCHEME_ID = "original";
@@ -212,6 +218,8 @@ const ENTRANCE_DOOR_SOURCES = new Set(["door-arc-7424", "door-arc-7427"]);
 const REMOVED_WALL_SOURCES = new Set(["orange-ring-6814:0"]);
 const AUTOMATIC_DOOR_WIDTH_CM = 471;
 const AUTOMATIC_DOOR_HEIGHT_CM = 430;
+const ENTRANCE_LEFT_WALL_SOURCE = "orange-6830";
+const ENTRANCE_DOOR_WALL_SOURCE = "入口大門外牆";
 const WINDOW_FRAME_OVERHANG_CM = 6;
 const WINDOW_COLUMN_CLEARANCE_CM = 1;
 
@@ -241,8 +249,8 @@ const materials = {
   exteriorWall: new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.84 }),
   exteriorWallTop: new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.84 }),
   facadeTrim: new THREE.MeshStandardMaterial({ color: 0x20272a, roughness: 0.56, metalness: 0.22 }),
-  corrugatedWall: new THREE.MeshStandardMaterial({ color: 0x626b6f, roughness: 0.7, metalness: 0.2 }),
-  corrugatedRib: new THREE.MeshStandardMaterial({ color: 0x50585c, roughness: 0.62, metalness: 0.28 }),
+  corrugatedWall: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.64, metalness: 0.12 }),
+  corrugatedRib: new THREE.MeshStandardMaterial({ color: 0xe8e9e5, roughness: 0.58, metalness: 0.18 }),
   roof: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 }),
   lowWall: new THREE.MeshStandardMaterial({
     color: 0x9ed0d0,
@@ -307,6 +315,24 @@ const materials = {
   humanCloth: new THREE.MeshStandardMaterial({ color: 0x6f8790, roughness: 0.78 }),
 };
 
+const ENTRANCE_FACADE_SURFACES = {
+  left: { label: "入口左側牆" },
+  ceiling: { label: "入口天花板" },
+  doorTop: { label: "自動門上方牆" },
+};
+
+const ENTRANCE_FACADE_MATERIALS = {
+  sb01: { code: "SB-01", label: "髮絲灰", type: "hairline", color: "#f2f5f7", line: "#c8ced3", highlight: "#ffffff", roughness: 0.37, metalness: 0.62, brightness: 1, emissiveIntensity: 0.05 },
+  sb02: { code: "SB-02", label: "髮絲白", type: "hairline", color: "#ffffff", line: "#e2e8ec", highlight: "#ffffff", roughness: 0.4, metalness: 0.52, brightness: 1, emissiveIntensity: 0.22 },
+  sb03: { code: "SB-03", label: "髮絲黑", type: "hairline", color: "#bfc6cb", line: "#59646c", highlight: "#f3f7fa", roughness: 0.36, metalness: 0.65, brightness: 1, emissiveIntensity: 0.04 },
+  st02: { code: "ST-02", label: "紅豆杉", type: "wood", color: "#7c3d14", line: "#3f1807", highlight: "#c7772d", roughness: 0.61, metalness: 0.03, brightness: 1.3, saturation: 0.72 },
+  st06: { code: "ST-06", label: "淺柚木", type: "wood", color: "#d8c3a9", line: "#956f4e", highlight: "#f2e5cf", roughness: 0.66, metalness: 0.02, brightness: 1.3, saturation: 0.72 },
+  st07: { code: "ST-07", label: "松木", type: "wood", color: "#b97932", line: "#65340f", highlight: "#e7b762", roughness: 0.63, metalness: 0.02, brightness: 1.3, saturation: 0.72 },
+};
+
+const facadeTextureCache = new Map();
+const facadePanelMaterialCache = new Map();
+
 const cadMaterials = {
   grid: new THREE.LineBasicMaterial({ color: 0xaab2b2, transparent: true, opacity: 0.22, depthTest: false }),
   heavy: new THREE.LineBasicMaterial({ color: 0x0e1111, transparent: true, opacity: 0.95, depthTest: false }),
@@ -317,6 +343,21 @@ const cadMaterials = {
 
 const stableWallMaterials = new Map();
 const stableConnectionMaterials = new Map();
+
+function adjustFacadeHexColor(hexColor, definition) {
+  const hex = String(hexColor).replace("#", "");
+  const numeric = Number.parseInt(hex, 16);
+  if (!Number.isFinite(numeric) || hex.length !== 6) return hexColor;
+  const channels = [16, 8, 0].map((shift) => (numeric >> shift) & 0xff);
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  const saturation = definition.saturation ?? 1;
+  const brightness = definition.brightness ?? 1;
+  const adjusted = channels.map((channel) => Math.min(
+    255,
+    Math.round((luminance + (channel - luminance) * saturation) * brightness),
+  ));
+  return `#${adjusted.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
 
 function getStableConnectionMaterial(baseMaterial, key, units) {
   if (!stableConnectionMaterials.has(key)) {
@@ -353,6 +394,103 @@ function getStableWallTopMaterial(category, index, finish = category) {
     stableWallMaterials.set(key, material);
   }
   return stableWallMaterials.get(key);
+}
+
+function getEntranceFacadeTexture(materialId) {
+  const id = ENTRANCE_FACADE_MATERIALS[materialId] ? materialId : "sb02";
+  if (facadeTextureCache.has(id)) return facadeTextureCache.get(id);
+  const definition = ENTRANCE_FACADE_MATERIALS[id];
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 256;
+  textureCanvas.height = 256;
+  const context = textureCanvas.getContext("2d");
+  context.fillStyle = adjustFacadeHexColor(definition.color, definition);
+  context.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
+
+  if (definition.type === "hairline") {
+    for (let y = 0; y < textureCanvas.height; y += 3) {
+      const pulse = (Math.sin(y * 0.79) + Math.sin(y * 0.23 + 1.2) + 2) / 4;
+      context.fillStyle = adjustFacadeHexColor(pulse > 0.55 ? definition.highlight : definition.line, definition);
+      context.globalAlpha = 0.11 + pulse * 0.12;
+      context.fillRect(0, y, textureCanvas.width, 1);
+    }
+    for (let x = 0; x < textureCanvas.width; x += 19) {
+      context.fillStyle = adjustFacadeHexColor(definition.highlight, definition);
+      context.globalAlpha = 0.035;
+      context.fillRect(x, 0, 1, textureCanvas.height);
+    }
+  } else {
+    for (let y = 0; y < textureCanvas.height; y += 8) {
+      const wave = Math.sin(y * 0.15) * 4 + Math.sin(y * 0.047 + 0.8) * 8;
+      context.beginPath();
+      context.moveTo(0, y + wave);
+      for (let x = 0; x <= textureCanvas.width; x += 16) {
+        const grain = Math.sin(x * 0.11 + y * 0.034) * 2.2 + Math.sin(x * 0.027 - y * 0.08) * 1.8;
+        context.lineTo(x, y + wave + grain);
+      }
+      context.strokeStyle = adjustFacadeHexColor(y % 24 === 0 ? definition.line : definition.highlight, definition);
+      context.globalAlpha = y % 24 === 0 ? 0.28 : 0.17;
+      context.lineWidth = y % 24 === 0 ? 1.6 : 0.8;
+      context.stroke();
+    }
+    for (let knot = 0; knot < 3; knot += 1) {
+      const centerX = 42 + knot * 85;
+      const centerY = 50 + ((knot * 67) % 150);
+      context.beginPath();
+      context.ellipse(centerX, centerY, 9, 3.2, -0.18, 0, Math.PI * 2);
+      context.strokeStyle = adjustFacadeHexColor(definition.line, definition);
+      context.globalAlpha = 0.22;
+      context.lineWidth = 1.2;
+      context.stroke();
+    }
+  }
+  context.globalAlpha = 1;
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  facadeTextureCache.set(id, texture);
+  return texture;
+}
+
+function getEntranceFacadePanelMaterial(materialId, widthCm, heightCm) {
+  const id = ENTRANCE_FACADE_MATERIALS[materialId] ? materialId : "sb02";
+  const repeatX = Math.max(1, Math.round(widthCm / 82) / 2);
+  const repeatY = Math.max(1, Math.round(heightCm / 72) / 2);
+  const key = `${id}-${repeatX}-${repeatY}`;
+  if (!facadePanelMaterialCache.has(key)) {
+    const definition = ENTRANCE_FACADE_MATERIALS[id];
+    const map = getEntranceFacadeTexture(id).clone();
+    map.repeat.set(repeatX, repeatY);
+    map.needsUpdate = true;
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map,
+      emissive: 0xffffff,
+      emissiveMap: map,
+      emissiveIntensity: definition.emissiveIntensity ?? 0,
+      roughness: definition.roughness,
+      metalness: definition.metalness,
+    });
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = -2;
+    material.polygonOffsetUnits = -220;
+    facadePanelMaterialCache.set(key, material);
+  }
+  return facadePanelMaterialCache.get(key);
+}
+
+function createDefaultEntranceFacadeMaterials() {
+  return { left: "sb02", ceiling: "sb02", doorTop: "sb02" };
+}
+
+function normalizeEntranceFacadeMaterials(value) {
+  const fallback = createDefaultEntranceFacadeMaterials();
+  return Object.fromEntries(Object.keys(ENTRANCE_FACADE_SURFACES).map((surface) => {
+    const materialId = surface === "ceiling" ? value?.ceiling ?? value?.upper : value?.[surface];
+    return [surface, ENTRANCE_FACADE_MATERIALS[materialId] ? materialId : fallback[surface]];
+  }));
 }
 
 const DESIGN_ITEMS = [
@@ -527,6 +665,9 @@ let columnEditorCollapsed = false;
 let canopyEditorOpen = false;
 let parkingEditorOpen = false;
 let signEditorOpen = false;
+let facadeMaterialPanelOpen = false;
+let selectedFacadeSurface = "left";
+let entranceFacadeMaterials = createDefaultEntranceFacadeMaterials();
 let editableWalls = [];
 let editableLowWalls = [];
 let editableColumns = [];
@@ -805,10 +946,6 @@ function inferWallCategory(wall) {
 
 function inferWallFinish(wall) {
   if (inferWallCategory(wall) !== "exterior") return "interior";
-  const axis = getWallAxis(wall);
-  const tolerance = Math.max(35, Number(wall.d ?? DEFAULT_WALL_THICKNESS_CM) * 2.5);
-  const isVertical = Math.abs(axis.z) >= 0.98;
-  if (isVertical && Math.abs(wall.x - CONSTRUCTION_PLAN.building.x0) <= tolerance) return "corrugated";
   return "exterior";
 }
 
@@ -1011,6 +1148,7 @@ function setWallHeightPanelOpen(open) {
   if (open && canopyEditorOpen) setCanopyEditorOpen(false);
   if (open && parkingEditorOpen) setParkingEditorOpen(false);
   if (open && signEditorOpen) setSignEditorOpen(false);
+  if (open && facadeMaterialPanelOpen) setFacadeMaterialPanelOpen(false);
   if (open && columnEditorOpen) setColumnEditorCollapsed(true);
   if (wallHeightPanel) wallHeightPanel.hidden = !open;
   toggleWallHeightButton?.classList.toggle("is-active", open);
@@ -1024,6 +1162,7 @@ function setPlanStoragePanelOpen(open) {
     setCanopyEditorOpen(false);
     setParkingEditorOpen(false);
     setSignEditorOpen(false);
+    setFacadeMaterialPanelOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     refreshPlanStorageStatus();
   }
@@ -1064,6 +1203,7 @@ function setColumnEditorOpen(open) {
     setCanopyEditorOpen(false);
     setParkingEditorOpen(false);
     setSignEditorOpen(false);
+    setFacadeMaterialPanelOpen(false);
   } else {
     selectedColumnId = null;
     selectedObject = null;
@@ -1082,6 +1222,7 @@ function setCanopyEditorOpen(open) {
     setPlanStoragePanelOpen(false);
     setParkingEditorOpen(false);
     setSignEditorOpen(false);
+    setFacadeMaterialPanelOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     if (!selectedCanopyId || !editableCanopies.some((item) => item.id === selectedCanopyId)) {
       selectedCanopyId = editableCanopies[0]?.id ?? null;
@@ -1106,6 +1247,7 @@ function setSignEditorOpen(open) {
     setPlanStoragePanelOpen(false);
     setCanopyEditorOpen(false);
     setParkingEditorOpen(false);
+    setFacadeMaterialPanelOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     if (!selectedSignId || !editableSigns.some((item) => item.id === selectedSignId)) {
       selectedSignId = editableSigns[0]?.id ?? null;
@@ -1113,6 +1255,56 @@ function setSignEditorOpen(open) {
   }
   syncSignEditor();
   rebuildRoofPreview();
+}
+
+function setFacadeMaterialPanelOpen(open) {
+  facadeMaterialPanelOpen = open;
+  if (facadeMaterialPanel) facadeMaterialPanel.hidden = !open;
+  toggleFacadeMaterialButton?.classList.toggle("is-active", open);
+  toggleFacadeMaterialButton?.setAttribute("aria-expanded", String(open));
+  if (open) {
+    setWallHeightPanelOpen(false);
+    setPlanStoragePanelOpen(false);
+    setCanopyEditorOpen(false);
+    setParkingEditorOpen(false);
+    setSignEditorOpen(false);
+    if (columnEditorOpen) setColumnEditorOpen(false);
+  }
+  syncFacadeMaterialPanel();
+}
+
+function syncFacadeMaterialPanel() {
+  const surface = ENTRANCE_FACADE_SURFACES[selectedFacadeSurface] ? selectedFacadeSurface : "left";
+  selectedFacadeSurface = surface;
+  const materialId = entranceFacadeMaterials[surface] ?? "sb02";
+  const material = ENTRANCE_FACADE_MATERIALS[materialId] ?? ENTRANCE_FACADE_MATERIALS.sb02;
+  facadeSurfaceButtons.forEach((button) => {
+    const active = button.dataset.facadeSurface === surface;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  facadeMaterialButtons.forEach((button) => {
+    const active = button.dataset.facadeMaterial === materialId;
+    button.classList.toggle("is-selected", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  if (facadeMaterialHint) facadeMaterialHint.textContent = `${ENTRANCE_FACADE_SURFACES[surface].label}｜目前：${material.code} ${material.label}`;
+}
+
+function setSelectedFacadeSurface(surface) {
+  if (!ENTRANCE_FACADE_SURFACES[surface]) return;
+  selectedFacadeSurface = surface;
+  syncFacadeMaterialPanel();
+}
+
+function setSelectedFacadeMaterial(materialId) {
+  if (!ENTRANCE_FACADE_MATERIALS[materialId]) return;
+  const surface = selectedFacadeSurface;
+  performHistoryAction(`更換${ENTRANCE_FACADE_SURFACES[surface].label}材質`, () => {
+    entranceFacadeMaterials[surface] = materialId;
+    syncFacadeMaterialPanel();
+    rebuildWalls();
+  });
 }
 
 function bindControls() {
@@ -1264,6 +1456,14 @@ function bindControls() {
       syncSignEditor();
       rebuildRoofPreview();
     });
+  });
+  toggleFacadeMaterialButton?.addEventListener("click", () => setFacadeMaterialPanelOpen(!facadeMaterialPanelOpen));
+  closeFacadeMaterialButton?.addEventListener("click", () => setFacadeMaterialPanelOpen(false));
+  facadeSurfaceButtons.forEach((button) => {
+    button.addEventListener("click", () => setSelectedFacadeSurface(button.dataset.facadeSurface));
+  });
+  facadeMaterialButtons.forEach((button) => {
+    button.addEventListener("click", () => setSelectedFacadeMaterial(button.dataset.facadeMaterial));
   });
   toggleColumnEditorButton?.addEventListener("click", () => setColumnEditorOpen(!columnEditorOpen));
   collapseColumnEditorButton?.addEventListener("click", () => setColumnEditorCollapsed(!columnEditorCollapsed));
@@ -1578,9 +1778,15 @@ function rebuildWalls() {
   });
   editableColumns.forEach((item, index) => {
     const selected = columnEditorOpen && item.id === selectedObject?.id;
+    const coveredByWestCladding = Math.abs(item.x - CONSTRUCTION_PLAN.building.x0) <= 130;
+    const columnMaterial = selected
+      ? materials.selectedColumn
+      : coveredByWestCladding
+        ? materials.corrugatedWall
+        : materials.column;
     const material = getStableConnectionMaterial(
-      selected ? materials.selectedColumn : materials.column,
-      `column-${item.id}-${selected ? "selected" : "normal"}`,
+      columnMaterial,
+      `column-${item.id}-${selected ? "selected" : coveredByWestCladding ? "west-covered" : "normal"}`,
       -(160 + index),
     );
     const mesh = addEditableSolid(getColumnRenderItem(item), material);
@@ -1589,7 +1795,8 @@ function rebuildWalls() {
     columnMeshes.push(mesh);
     registerEditableObject(item, index, "柱子", { x: "X cm", z: "Z cm", w: "寬 cm", d: "深 cm" }, 3);
   });
-  addWestCorrugatedCladding();
+  addWestFacadeCover();
+  addEntranceFacadeSurfaces();
   editableDoors.forEach((item, index) => {
     addDoor(item, wallGroup, index);
     addEditableDoorSill(item, index);
@@ -2419,6 +2626,7 @@ function setParkingEditorOpen(open) {
     setPlanStoragePanelOpen(false);
     setCanopyEditorOpen(false);
     setSignEditorOpen(false);
+    setFacadeMaterialPanelOpen(false);
     if (columnEditorOpen) setColumnEditorOpen(false);
     if (!selectedParkingId || !editableParking.some((item) => item.id === selectedParkingId)) {
       selectedParkingId = editableParking[0]?.id ?? null;
@@ -3198,7 +3406,9 @@ function getColumnRenderItem(item) {
   let z1 = item.z + halfExtentZ + seamCoverCm / 2;
   if (nearWest) {
     const renderedWidth = x1 - x0;
-    x0 = building.x0 - DEFAULT_WALL_THICKNESS_CM / 2;
+    // Keep west-side structural columns fully behind the toilet-side exterior sheet.
+    // This only changes their rendered envelope; the editable plan coordinates stay intact.
+    x0 = building.x0;
     x1 = x0 + renderedWidth;
   }
   if (nearEast) x1 = Math.max(x1, building.x1 + revealDepthCm);
@@ -3215,67 +3425,137 @@ function getColumnRenderItem(item) {
   };
 }
 
-function addWestCorrugatedCladding() {
-  const westWalls = editableWalls.filter((wall) => inferWallFinish(wall) === "corrugated");
-  if (!westWalls.length) return;
+function addWestFacadeCover() {
+  const wall = editableWalls.find((item) => item.source === "orange-poly-7419" || item.id === "wall-orange-poly-7419");
+  if (!wall) return;
+
   const claddingDepthCm = 1.8;
-  const surfaceGapM = 0.004;
-  const ribDepth = 0.026;
-  const ribWidth = 0.022;
+  const surfaceGapCm = 0.8;
+  const ribDepthM = 0.026;
+  const ribWidthM = 0.022;
+  const wallHeightCm = Number(wall.h) || DEFAULT_EXTERIOR_WALL_HEIGHT_CM;
+  const wallStart = wall.z - wall.w / 2;
+  const wallEnd = wall.z + wall.w / 2;
+  const overlappingColumns = editableColumns
+    .map(getColumnRenderItem)
+    .filter((column) => column.z + column.d / 2 >= wallStart && column.z - column.d / 2 <= wallEnd);
+  const existingOuterFace = wall.x - (Number(wall.d) || DEFAULT_WALL_THICKNESS_CM) / 2;
+  const columnOuterFaces = overlappingColumns.map((column) => column.x - column.w / 2);
+  const nearestSolidOuterFace = Math.min(existingOuterFace, ...columnOuterFaces);
+  const claddingOuterFace = nearestSolidOuterFace - claddingDepthCm - surfaceGapCm;
+  const claddingX = claddingOuterFace + claddingDepthCm / 2;
+  const claddingWall = {
+    ...wall,
+    type: "cladding",
+    x: claddingX,
+    w: wall.w + 20,
+    d: claddingDepthCm,
+    wallCategory: "exterior",
+    wallFinish: "corrugated-white",
+  };
+  const wallOpenings = getArchitecturalWallOpenings(wall)
+    .filter((opening) => opening.end > -claddingWall.w / 2 && opening.start < claddingWall.w / 2)
+    .sort((a, b) => a.start - b.start);
 
-  westWalls.forEach((wall) => {
-    const wallDepthCm = Number(wall.d) || DEFAULT_WALL_THICKNESS_CM;
-    const wallHeightCm = Number(wall.h) || DEFAULT_EXTERIOR_WALL_HEIGHT_CM;
-    const wallOpenings = getArchitecturalWallOpenings(wall)
-      .filter((opening) => opening.end > -wall.w / 2 && opening.start < wall.w / 2)
+  // Only the toilet-side west façade receives white corrugated sheet. Window cut-outs
+  // remain open, and the outer sheet face sits beyond every west column face.
+  addEditableWall(claddingWall, wallOpenings, materials.corrugatedWall);
+
+  const claddingStart = claddingWall.z - claddingWall.w / 2;
+  const claddingEnd = claddingWall.z + claddingWall.w / 2;
+  for (let z = claddingStart + 12; z < claddingEnd; z += 24) {
+    const along = z - wall.z;
+    const verticalCuts = wallOpenings
+      .filter((opening) => along >= opening.start && along <= opening.end)
+      .map((opening) => ({
+        start: Math.max(0, opening.bottom),
+        end: Math.min(wallHeightCm, opening.top),
+      }))
+      .filter((opening) => opening.end > opening.start)
       .sort((a, b) => a.start - b.start);
-    const claddingX = wall.x - wallDepthCm / 2 - claddingDepthCm / 2 - surfaceGapM * 100;
-    const claddingWall = {
-      ...wall,
-      type: "cladding",
-      x: claddingX,
-      d: claddingDepthCm,
+    let cursor = 0;
+    const ribSegments = [];
+    verticalCuts.forEach((cut) => {
+      if (cut.start - cursor >= 1) ribSegments.push({ start: cursor, end: cut.start });
+      cursor = Math.max(cursor, cut.end);
+    });
+    if (wallHeightCm - cursor >= 1) ribSegments.push({ start: cursor, end: wallHeightCm });
+
+    const position = toWorld(claddingX, z);
+    ribSegments.forEach((segment) => {
+      const segmentHeight = (segment.end - segment.start) / 100;
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(ribDepthM, segmentHeight, ribWidthM), materials.corrugatedRib);
+      rib.position.set(
+        position.x - claddingDepthCm / 200 - ribDepthM / 2 - surfaceGapCm / 100,
+        officeElevation + segment.start / 100 + segmentHeight / 2,
+        position.z,
+      );
+      rib.castShadow = true;
+      rib.receiveShadow = true;
+      rib.renderOrder = 6;
+      wallGroup.add(rib);
+    });
+  }
+}
+
+function addEntranceFacadeSurfaces() {
+  const leftWall = editableWalls.find((wall) => wall.source === ENTRANCE_LEFT_WALL_SOURCE || wall.id === "wall-orange-6830");
+  const doorWall = editableWalls.find((wall) => wall.source === ENTRANCE_DOOR_WALL_SOURCE || wall.id === "wall-orange-6832");
+  const automaticDoor = editableDoors.find((door) => door.doorStyle === "automatic" && (!doorWall || door.wallId === doorWall.id));
+  const panelDepthCm = 2.4;
+
+  if (leftWall) {
+    const material = getEntranceFacadePanelMaterial(entranceFacadeMaterials.left, leftWall.w, leftWall.h);
+    const panel = {
+      ...leftWall,
+      type: "facade-panel",
+      x: leftWall.x + (Number(leftWall.d) || DEFAULT_WALL_THICKNESS_CM) / 2 + panelDepthCm / 2 + 0.4,
+      d: panelDepthCm,
       wallCategory: "exterior",
-      wallFinish: "corrugated",
     };
-    addEditableWall(claddingWall, wallOpenings, materials.corrugatedWall);
+    addEditableWall(panel, getArchitecturalWallOpenings(leftWall), material);
+  }
 
-    const wallStart = wall.z - wall.w / 2;
-    const wallEnd = wall.z + wall.w / 2;
-    for (let z = wallStart + 12; z < wallEnd; z += 24) {
-      const along = z - wall.z;
-      const verticalCuts = wallOpenings
-        .filter((opening) => along >= opening.start && along <= opening.end)
-        .map((opening) => ({
-          start: Math.max(0, opening.bottom),
-          end: Math.min(wallHeightCm, opening.top),
-        }))
-        .filter((opening) => opening.end > opening.start)
-        .sort((a, b) => a.start - b.start);
-      let cursor = 0;
-      const ribSegments = [];
-      verticalCuts.forEach((cut) => {
-        if (cut.start - cursor >= 1) ribSegments.push({ start: cursor, end: cut.start });
-        cursor = Math.max(cursor, cut.end);
-      });
-      if (wallHeightCm - cursor >= 1) ribSegments.push({ start: cursor, end: wallHeightCm });
-
-      const position = toWorld(claddingX, z);
-      ribSegments.forEach((segment) => {
-        const segmentHeight = (segment.end - segment.start) / 100;
-        const rib = new THREE.Mesh(new THREE.BoxGeometry(ribDepth, segmentHeight, ribWidth), materials.corrugatedRib);
-        rib.position.set(
-          position.x - claddingDepthCm / 200 - ribDepth / 2 - surfaceGapM,
-          officeElevation + segment.start / 100 + segmentHeight / 2,
-          position.z,
-        );
-        rib.castShadow = true;
-        rib.receiveShadow = true;
-        rib.renderOrder = 6;
-        wallGroup.add(rib);
-      });
+  if (automaticDoor && doorWall) {
+    const topHeightCm = Math.max(0, doorWall.h - automaticDoor.h);
+    if (topHeightCm >= 2) {
+      const material = getEntranceFacadePanelMaterial(entranceFacadeMaterials.doorTop, automaticDoor.w, topHeightCm);
+      addEditableSolid({
+        type: "facade-panel",
+        x: automaticDoor.x,
+        z: doorWall.z + (Number(doorWall.d) || DEFAULT_WALL_THICKNESS_CM) / 2 + panelDepthCm / 2 + 0.4,
+        w: automaticDoor.w,
+        d: panelDepthCm,
+        h: topHeightCm,
+        rot: doorWall.rot,
+      }, material, automaticDoor.h, topHeightCm, false);
     }
-  });
+  }
+
+  if (editableRoof && leftWall && doorWall) {
+    const { building } = CONSTRUCTION_PLAN;
+    const ceilingThicknessCm = 2.4;
+    const entranceX0 = Math.max(
+      leftWall.x + (Number(leftWall.d) || DEFAULT_WALL_THICKNESS_CM) / 2,
+      doorWall.x - doorWall.w / 2,
+    );
+    const entranceX1 = Math.min(building.x1, doorWall.x + doorWall.w / 2);
+    const entranceZ0 = doorWall.z + (Number(doorWall.d) || DEFAULT_WALL_THICKNESS_CM) / 2;
+    const entranceZ1 = editableRoof.z + editableRoof.d / 2;
+    const ceilingWidthCm = Math.max(2, entranceX1 - entranceX0);
+    const ceilingDepthCm = Math.max(2, entranceZ1 - entranceZ0);
+    const material = getEntranceFacadePanelMaterial(entranceFacadeMaterials.ceiling, ceilingWidthCm, ceilingDepthCm);
+    const position = toWorld((entranceX0 + entranceX1) / 2, (entranceZ0 + entranceZ1) / 2);
+    const ceiling = new THREE.Mesh(
+      new THREE.BoxGeometry(ceilingWidthCm / 100, ceilingThicknessCm / 100, ceilingDepthCm / 100),
+      material,
+    );
+    ceiling.position.set(position.x, getRoofBaseY() - ceilingThicknessCm / 200 - 0.006, position.z);
+    ceiling.castShadow = true;
+    ceiling.receiveShadow = true;
+    ceiling.renderOrder = 6;
+    wallGroup.add(ceiling);
+  }
 }
 
 function addEditableDoorSill(item, index) {
@@ -4745,6 +5025,7 @@ function getCurrentPlanState() {
     canopies: editableCanopies.map(serializeCanopy),
     parking: editableParking.map(serializeParkingLayout),
     signs: editableSigns.map(serializeRoofSign),
+    entranceFacade: normalizeEntranceFacadeMaterials(entranceFacadeMaterials),
   };
 }
 
@@ -5025,6 +5306,7 @@ function normalizePlanState(plan) {
   collections.canopies ??= createDefaultCanopies();
   collections.parking ??= createDefaultParkingLayouts();
   collections.signs ??= createDefaultRoofSigns();
+  const entranceFacade = normalizeEntranceFacadeMaterials(plan.entranceFacade);
   if (schemaVersion < 4) {
     collections.doors.forEach((door) => {
       door.w = STANDARD_DOOR_WIDTH_CM;
@@ -5053,6 +5335,7 @@ function normalizePlanState(plan) {
     canopies: normalizeCanopies(collections.canopies).map(serializeCanopy),
     parking: normalizeParkingLayouts(collections.parking).map(serializeParkingLayout),
     signs: normalizeRoofSigns(collections.signs).map(serializeRoofSign),
+    entranceFacade,
   };
 }
 
@@ -5080,6 +5363,7 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   editableCanopies = normalizeCanopies(normalized.canopies);
   editableParking = normalizeParkingLayouts(normalized.parking);
   editableSigns = normalizeRoofSigns(normalized.signs);
+  entranceFacadeMaterials = normalizeEntranceFacadeMaterials(normalized.entranceFacade);
   selectedCanopyId = editableCanopies.some((item) => item.id === selectedCanopyId) ? selectedCanopyId : editableCanopies[0]?.id ?? null;
   selectedParkingId = editableParking.some((item) => item.id === selectedParkingId) ? selectedParkingId : editableParking[0]?.id ?? null;
   selectedSignId = editableSigns.some((item) => item.id === selectedSignId) ? selectedSignId : editableSigns[0]?.id ?? null;
@@ -5098,6 +5382,7 @@ function applyPlanState(plan, { clearHistory = true, preserveSelection = false }
   syncCanopyEditor();
   syncParkingEditor();
   syncSignEditor();
+  syncFacadeMaterialPanel();
   rebuildFurniture();
   rebuildWalls();
   return normalized;
@@ -5446,6 +5731,7 @@ function planStateSignature(plan) {
     canopies: serializeCollection(plan.canopies ?? []),
     parking: serializeCollection(plan.parking ?? []),
     signs: serializeCollection(plan.signs ?? []),
+    entranceFacade: normalizeEntranceFacadeMaterials(plan.entranceFacade),
   });
 }
 

@@ -30,6 +30,7 @@
             <button id="toggleCanopyEditor" class="icon-button" type="button" title="開啟遮雨棚編輯" aria-label="開啟遮雨棚編輯" aria-expanded="false" aria-controls="canopyEditor"><i data-lucide="umbrella"></i><span>雨棚</span></button>
             <button id="toggleParkingEditor" class="icon-button" type="button" title="開啟停車規劃" aria-label="開啟停車規劃" aria-expanded="false" aria-controls="parkingEditor"><i data-lucide="square-parking"></i><span>停車</span></button>
             <button id="toggleSignEditor" class="icon-button" type="button" title="開啟屋頂招牌編輯" aria-label="開啟屋頂招牌編輯" aria-expanded="false" aria-controls="signEditor"><i data-lucide="type"></i><span>招牌</span></button>
+            <button id="toggleFacadeMaterial" class="icon-button" type="button" title="開啟入口材質試配" aria-label="開啟入口材質試配" aria-expanded="false" aria-controls="facadeMaterialPanel"><i data-lucide="palette"></i><span>材質</span></button>
             <button id="toggleColumnEditor" class="icon-button" type="button" title="開啟物件編輯" aria-label="開啟物件編輯" aria-expanded="false" aria-controls="columnEditor"><i data-lucide="pencil"></i><span>編輯</span></button>
             <button id="togglePlanStorage" class="icon-button" type="button" title="開啟版本與備份" aria-label="開啟版本與備份" aria-expanded="false" aria-controls="planStoragePanel"><i data-lucide="save"></i><span>版本</span></button>
           </div>
@@ -183,6 +184,29 @@
           <button id="focusSign" type="button"><i data-lucide="focus"></i><span>聚焦選取招牌</span></button>
           <button id="resetSigns" type="button"><i data-lucide="rotate-ccw"></i><span>重設兩面招牌</span></button>
         </div>
+      </section>
+      <section class="hud facade-material-panel" id="facadeMaterialPanel" hidden>
+        <div class="facade-material-panel__header">
+          <div class="facade-material-panel__title">
+            <strong>入口材質試配</strong>
+            <span id="facadeMaterialHint">入口左側牆｜目前：SB-02 髮絲白</span>
+          </div>
+          <button id="closeFacadeMaterial" class="mini-icon-button" type="button" title="關閉入口材質試配" aria-label="關閉入口材質試配"><i data-lucide="x"></i></button>
+        </div>
+        <div class="facade-surface-tabs" role="group" aria-label="選擇要套用材質的入口牆面">
+          <button type="button" data-facade-surface="left" aria-pressed="true">入口左側牆</button>
+          <button type="button" data-facade-surface="ceiling" aria-pressed="false">入口天花板</button>
+          <button type="button" data-facade-surface="doorTop" aria-pressed="false">自動門上方</button>
+        </div>
+        <div class="facade-material-grid" aria-label="可用表面材質">
+          <button type="button" data-facade-material="sb01"><span class="facade-material-swatch facade-material-swatch--sb01" aria-hidden="true"></span><strong>SB-01</strong><small>髮絲灰</small></button>
+          <button type="button" data-facade-material="sb02"><span class="facade-material-swatch facade-material-swatch--sb02" aria-hidden="true"></span><strong>SB-02</strong><small>髮絲白</small></button>
+          <button type="button" data-facade-material="sb03"><span class="facade-material-swatch facade-material-swatch--sb03" aria-hidden="true"></span><strong>SB-03</strong><small>髮絲黑</small></button>
+          <button type="button" data-facade-material="st02"><span class="facade-material-swatch facade-material-swatch--st02" aria-hidden="true"></span><strong>ST-02</strong><small>紅豆杉</small></button>
+          <button type="button" data-facade-material="st06"><span class="facade-material-swatch facade-material-swatch--st06" aria-hidden="true"></span><strong>ST-06</strong><small>淺柚木</small></button>
+          <button type="button" data-facade-material="st07"><span class="facade-material-swatch facade-material-swatch--st07" aria-hidden="true"></span><strong>ST-07</strong><small>松木</small></button>
+        </div>
+        <p class="facade-material-panel__note">只會更換入口左側牆、入口外側天花板與自動門上方牆面；室內天花板、招牌與其他外牆不受影響。</p>
       </section>
       <section class="hud column-editor" id="columnEditor" hidden>
         <div class="column-editor__header">
