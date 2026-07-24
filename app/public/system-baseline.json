@@ -1,7 +1,7 @@
 {
   "format": "phoenixes-office-column-plan",
   "schemaVersion": 9,
-  "savedAt": "2026-07-22T09:14:57.601Z",
+  "savedAt": "2026-07-24T05:02:56.056Z",
   "wallHeightM": 3,
   "exteriorWallHeightM": 5.6,
   "columnHeightM": 5.6,
@@ -322,7 +322,7 @@
       "id": "wall-orange-6832",
       "type": "wall",
       "kind": "wall",
-      "x": 2489,
+      "x": 2486,
       "z": 1219,
       "w": 539,
       "d": 14,
@@ -504,8 +504,8 @@
       "id": "column-column-7466",
       "type": "column",
       "kind": "column",
-      "x": 2177,
-      "z": 1199,
+      "x": 2175,
+      "z": 1218,
       "w": 51,
       "d": 50,
       "h": 560,
@@ -727,7 +727,7 @@
       "id": "door-entrance-automatic",
       "type": "door",
       "kind": "door",
-      "x": 2470,
+      "x": 2467,
       "z": 1219,
       "w": 471,
       "d": 14,
@@ -1901,9 +1901,9 @@
       "kind": "canopy",
       "style": "cantilever",
       "source": "A｜後柱懸臂單斜棚",
-      "x": 1050,
+      "x": 1110,
       "z": 1860,
-      "w": 2120,
+      "w": 2230,
       "d": 380,
       "h": 330,
       "rot": 0,
@@ -1934,8 +1934,8 @@
       "style": "four-post",
       "source": "B｜平頂蓋棚",
       "x": 3070,
-      "z": 640,
-      "w": 800,
+      "z": 610,
+      "w": 1100,
       "d": 480,
       "h": 310,
       "rot": 90,
@@ -1946,19 +1946,19 @@
       "postSize": 30,
       "posts": [
         {
-          "x": -385,
+          "x": -535,
           "z": -215
         },
         {
-          "x": 385,
+          "x": 535,
           "z": -215
         },
         {
-          "x": -385,
+          "x": -535,
           "z": 215
         },
         {
-          "x": 385,
+          "x": 535,
           "z": 215
         }
       ]
